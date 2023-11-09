@@ -2,7 +2,11 @@
 #ifndef BlueteethInternalNetworkStack_h
 #define BlueteethInternalNetworkStack_h
 
-#define MAX_PAYLOAD_SIZE (50) //needs to accomdate up to 
+#include <stdint.h>
+#include <functional>
+#include "HardwareSerial.h"
+
+#define MAX_PAYLOAD_SIZE (10)
 
 typedef struct {
 
@@ -23,9 +27,15 @@ public:
     *
     *  @bufferSize - The size of the received packet buffer
     */
-    BlueteethBaseStack(uint8_t bufferSize){
-
+    BlueteethBaseStack(uint8_t bufferSize, HardwareSerial * controlPlane, HardwareSerial * dataPlane){
+        
         receivedPacketBuffer = xQueueCreate(bufferSize, sizeof(blueTeethPacket));
+        transmitPacketBuffer = xQueueCreate(bufferSize, sizeof(blueTeethPacket));
+
+        this -> controlPlane = controlPlane;
+        this -> dataPlane = dataPlane;
+
+        this -> address = 255; //Max value (indicates that the node has not been assigned an address)
     
     }
     
@@ -34,31 +44,59 @@ public:
     *  @overwrite - Whether the packet buffer should be overwritten (if it is currently full)   
     *  @return - indication of whether the buffer was written to  (0 = Did not write to packet buffer, 1 = Wrote to packet buffer)
     */
-    bool sendPacket(bool overwrite);
+    bool queuePacket(bool overwrite);
 
     /* Checks to see if a packet is available.
     *
     *  @return - indication of whether the buffer was overwritten.  
     */
-    bool checkForPacket();
+    bool checkForPacket(){
+
+        if (uxQueueMessagesWaiting(internalNetworkStack.transmitPacketBuffer) > 0){
+            return 1;
+        }
+        else {
+            return 0;
+        }
+    }
     
     /* Retrieves the packet at the top of the receive buffer.
     *
     *  @return - the packet at the top of the receive buffer.
     */
-    blueTeethPacket getPacket();
+    blueTeethPacket getPacket(){
+        blueTeethPacket retrievedPacket;
+        xQueueReceive(internalNetworkStack.receivedPacketBuffer, &retrievedPacket, 0);
+        return retrievedPacket;
 
+    }
 
-    /* Schedules RTOS tasks related to the communications stack
+    /* Workaround for not being able to set a member function as a callback to serial interrupts through HardwareSerial::onRecieve
     *
-    *  @return - A pointer to the different tasks added to the scheduler.
     */
-    TaskHandle_t * scheduleTasks();
+    friend void packetReceived();
+
+    /* Sets the ISR callbacks for the controlPlane and dataPlane interrupts
+    *
+    */
+    friend void blueTeethNetworkSetup();
 
 protected:
     
-    blueTeethPacket transmitPacketBuffer;
+    void transmitPacket(blueTeethPacket packet){
+
+        this -> controlPlane -> write(packet.tokenFlag);
+        this -> controlPlane -> write(packet.srcAddr);
+        this -> controlPlane -> write(packet.dstAddr);
+        for (int i = 0; i < MAX_PAYLOAD_SIZE; i++)
+        this -> controlPlane -> write(packet.payload[i]);
+    }
+
+    uint8_t address;
+    QueueHandle_t transmitPacketBuffer;
     QueueHandle_t receivedPacketBuffer; 
+    HardwareSerial * controlPlane;
+    HardwareSerial * dataPlane;
 
 };
 
@@ -70,13 +108,29 @@ public:
     *
     *  @bufferSize - The size of the received packet buffer
     */
-    BlueteethMasterStack(uint8_t bufferSize):BlueteethBaseStack(bufferSize){   
+    BlueteethMasterStack(uint8_t bufferSize, HardwareSerial * controlPlane, HardwareSerial * dataPlane) : BlueteethBaseStack(bufferSize, controlPlane, dataPlane){   
+        
+        this -> address = 0;
 
+        blueTeethPacket initializationPacket;
+        initializationPacket.dstAddr = 255;
+        initializationPacket.payload[0] = 1;
+        this -> transmitPacket(initializationPacket);
+    }
+
+    /* To be called from a watchdog timer task to generate a new token if one is lost.
+    *
+    */
+    void generateNewToken(){
+
+        blueTeethPacket newTokenPacket;
+        newTokenPacket.tokenFlag = 1;
+        this -> transmitPacket(newTokenPacket);   
     }
 
 
 private:
-
+    
 };
 
 #endif
