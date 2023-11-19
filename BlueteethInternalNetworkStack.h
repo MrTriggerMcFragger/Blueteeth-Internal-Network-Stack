@@ -13,9 +13,10 @@ using namespace std;
 #define MAX_PAYLOAD_SIZE (10)
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
+#define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (40000)
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, SCAN, SELECT, STREAM, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, SELECT, STREAM, TEST};
 
 class BlueteethPacket {
 

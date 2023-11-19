@@ -2,6 +2,7 @@
 
 extern BlueteethBaseStack * internalNetworkStackPtr;
 
+extern uint32_t streamTime; //DEBUG (REMOVE LATER)
 
 void inline flushSerialBuffer(HardwareSerial * serial){
     while (serial -> available() > 0){
@@ -40,7 +41,7 @@ void uartFrameReceived(){
 
     //Don't try to package packet unless there's enough data on the buffer to do so
     if(bytesInBuffer < sizeof(BlueteethPacket)){
-        Serial.print("Not enough bits for a packet\n\r"); //DEBUG STATEMENT 
+        // Serial.print("Not enough bits for a packet\n\r"); //DEBUG STATEMENT 
         return;
     }  
     //If there are extra bytes in the buffer, something is wrong, and the buffer has been corrupted.
@@ -50,7 +51,7 @@ void uartFrameReceived(){
     */
     else if ((bytesInBuffer % sizeof(BlueteethPacket)) != 0 ) 
     {
-        Serial.print("Buffer corrupted\n\r");
+        // Serial.print("Buffer corrupted\n\r");
         flushSerialBuffer(internalNetworkStackPtr -> controlPlane);
         return;
     }      
@@ -88,7 +89,7 @@ void uartFrameReceived(){
     }
     //If the packet was not meant for this device at all, send it on to the next device in the ring
     else {
-        Serial.print("Received packet for someone else\n\r"); //DEBUG STATEMENT
+        // Serial.print("Received packet for someone else\n\r"); //DEBUG STATEMENT
         internalNetworkStackPtr -> transmitPacket(receivedPacket);
     }
 }
@@ -107,15 +108,12 @@ void dataStreamReceived(){
         newBytes = MAX_DATA_BUFFER_SIZE - totalBytes;
     }
 
-    //TEMPORARY!!!
-    //Eventually need to make sure buffer doesn't overflow.
     internalNetworkStackPtr -> dataPlane -> readBytes(internalNetworkStackPtr -> dataBuffer + totalBytes, newBytes);
 
     totalBytes += newBytes;
 
     if (totalBytes == 40000){ //DEBUG STATEMENT
-        time = millis() - time;
-        Serial.printf("Stream successful! Time elapsed (ms) = %lu\n\r", time);
+        streamTime = millis() - time;
         totalBytes = 0;
     } 
 
