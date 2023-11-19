@@ -96,26 +96,25 @@ void uartFrameReceived(){
 
 void dataStreamReceived(){
 
-    static int totalBytes = 0;
-    static uint32_t time = 0;
     int newBytes = internalNetworkStackPtr -> dataPlane -> available();
     
-    if (totalBytes == 0) {
-        time = millis();
+    int currentSize = internalNetworkStackPtr -> dataBuffer.size();
+
+    if (currentSize == 0) {
+        streamTime = millis();
+    }
+    
+    if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
+        newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
     }
 
-    if (totalBytes + newBytes > MAX_DATA_BUFFER_SIZE){
-        newBytes = MAX_DATA_BUFFER_SIZE - totalBytes;
+    for (int i = 0; i < newBytes ; i++) {
+        internalNetworkStackPtr -> dataBuffer.push_back(internalNetworkStackPtr -> dataPlane -> read());
     }
 
-    internalNetworkStackPtr -> dataPlane -> readBytes(internalNetworkStackPtr -> dataBuffer + totalBytes, newBytes);
-
-    totalBytes += newBytes;
-
-    if (totalBytes == 40000){ //DEBUG STATEMENT
-        streamTime = millis() - time;
-        totalBytes = 0;
+    if (internalNetworkStackPtr -> dataBuffer.size() == 40000){ //DEBUG STATEMENT
+        streamTime = millis() - streamTime;
     } 
 
-    // Serial.printf("Data received: %d\n\r", totalBytes); //DEBUG STATEMENT
+    // Serial.printf("Data received: Attempted to add %d bytes and now there are %d bytes in the deque\n\r", newBytes, internalNetworkStackPtr -> dataBuffer.size()); //DEBUG STATEMENT
 }

@@ -7,6 +7,7 @@
 #include "HardwareSerial.h"
 #include <string>
 #include <set>
+#include <deque>
 
 using namespace std;
 
@@ -16,7 +17,7 @@ using namespace std;
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (40000)
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, SELECT, STREAM, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, STREAM, TEST};
 
 class BlueteethPacket {
 
@@ -202,7 +203,7 @@ public:
         this -> queuePacket(1, receivedPacket);
     }
 
-    uint8_t dataBuffer[MAX_DATA_BUFFER_SIZE];
+    deque<uint8_t> dataBuffer;
 
 
 protected:
