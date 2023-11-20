@@ -16,8 +16,24 @@ using namespace std;
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (40000)
+#define DATA_PLANE_BAUD (441600)
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, STREAM, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, STREAM, FLUSH, TEST};
+
+/* Control plane callback function
+*
+*/
+void uartFrameReceived();
+
+/* Data plane callback function
+*
+*/
+void dataStreamReceived();
+
+/* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
+*
+*/
+void inline flushSerialBuffer(HardwareSerial * serial);
 
 class BlueteethPacket {
 
@@ -65,16 +81,6 @@ public:
 
 };
 
-/* Control plane callback function
-*
-*/
-void uartFrameReceived();
-
-/* Data plane callback function
-*
-*/
-void dataStreamReceived();
-
 class BlueteethBaseStack
 {
 
@@ -116,8 +122,8 @@ public:
 
         this -> controlPlane -> begin(115200);
         this -> controlPlane -> onReceive(uartFrameReceived);
-
-        this -> dataPlane -> begin(1152000, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program).  
+        //441600
+        this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
         this -> dataPlane -> onReceive(dataStreamReceived);
     }
     
@@ -147,6 +153,10 @@ public:
 
     }
 
+    void flushDataPlaneSerialBuffer(){
+        flushSerialBuffer(this -> dataPlane);
+    }
+
     /*  Retrieves the device's address.
     *
     *   @return - This device's address.
@@ -155,12 +165,21 @@ public:
         return this -> address;
     }
 
-    /*  Stream data over the data plane
+    /*  Stream data over the data plane -> This verison streams a single byte
     *
     *   @byte - The byte being transmitted;
     */
     void streamData(uint8_t byte){
         this -> dataPlane -> write(byte);
+    };
+
+    /*  Stream data over the data plane -> This version will stream more bytes
+    *
+    *   @byte - The byte being transmitted;
+    */
+    void streamData(const uint8_t * bytes, int length){
+        // Serial.printf("Sending %d bytes data...\n\r", length);
+        this -> dataPlane -> write(bytes, length);
     };
     
     /*  Callback to perform appropriate actions upon token packet reception
