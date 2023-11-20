@@ -9,6 +9,8 @@
 #include <set>
 #include <deque>
 
+#define TIME_STREAMING (1)
+
 using namespace std;
 
 #define MAX_PAYLOAD_SIZE (10)
@@ -18,7 +20,7 @@ using namespace std;
 #define MAX_DATA_BUFFER_SIZE (40000)
 #define DATA_PLANE_BAUD (441600)
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, STREAM, FLUSH, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, TEST};
 
 /* Control plane callback function
 *

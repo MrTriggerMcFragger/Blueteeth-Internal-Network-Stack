@@ -2,7 +2,9 @@
 
 extern BlueteethBaseStack * internalNetworkStackPtr;
 
-extern uint32_t streamTime; //DEBUG (REMOVE LATER)
+#ifdef TIME_STREAMING
+uint32_t streamTime; //DEBUG (REMOVE LATER)
+#endif
 
 void inline flushSerialBuffer(HardwareSerial * serial){
     while (serial -> available() > 0){
@@ -101,9 +103,11 @@ void dataStreamReceived(){
     
     // Serial.printf("Buffer size is %d\n\r", internalNetworkStackPtr->dataBuffer.size());
 
-    // if (currentSize == 0) {
-    //     streamTime = millis();
-    // }
+    #ifdef TIME_STREAMING
+    if (currentSize == 0) {
+        streamTime = millis();
+    }
+    #endif
     
     bool flushToken = false;
     if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
@@ -126,9 +130,11 @@ void dataStreamReceived(){
         flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     }
 
-    // if (internalNetworkStackPtr -> dataBuffer.size() == 40000){ //DEBUG STATEMENT
-    //     streamTime = millis() - streamTime;
-    // } 
+    #ifdef TIME_STREAMING
+    if (internalNetworkStackPtr -> dataBuffer.size() == 40000){ //DEBUG STATEMENT
+        streamTime = millis() - streamTime;
+    } 
+    #endif
 
     // Serial.printf("Data received: Attempted to add %d bytes and now there are %d bytes in the deque\n\r", newBytes, internalNetworkStackPtr -> dataBuffer.size()); //DEBUG STATEMENT
 }

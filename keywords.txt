@@ -1,3 +1,13 @@
-BlueteethInternalNetworkStack   KEYWORD1
-blueteethNetworkSetup 	        KEYWORD2
-send_packet                     KEYWORD2
+BlueteethPacket             KEYWORD1
+BlueteethBaseStack          KEYWORD1
+begin                       KEYWORD2
+queuePacket                 KEYWORD2
+getPacket                   KEYWORD2
+flushDataPlaneSerialBuffer  KEYWORD2
+getAddress                  KEYWORD2
+streamData                  KEYWORD2
+tokenReceived               KEYWORD2
+BlueteethMasterStack        KEYWORD1
+generateNewToken            KEYWORD2
+getTokenRxFlag              KEYWORD2
+resetTokenRxFlag            KEYWORD2
