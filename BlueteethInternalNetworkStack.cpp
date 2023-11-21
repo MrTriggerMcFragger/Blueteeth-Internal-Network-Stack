@@ -116,11 +116,7 @@ void dataStreamReceived(){
         // Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
     }
 
-    // for (int i = 0; i < newBytes ; i++) {
-    //     internalNetworkStackPtr -> dataBuffer.push_back(internalNetworkStackPtr -> dataPlane -> read());
-    // }
-
-    uint8_t tmp [newBytes];
+    uint8_t tmp [newBytes]; //Faster to temporarily read in bits with one readBytes function call than repeatedly read. Need to adapt readBytes for an iterator.
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, newBytes);
     for (int i = 0; i < newBytes ; i++) {
         internalNetworkStackPtr -> dataBuffer.push_back(tmp[i]);

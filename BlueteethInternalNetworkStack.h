@@ -9,7 +9,7 @@
 #include <set>
 #include <deque>
 
-#define TIME_STREAMING (1)
+// #define TIME_STREAMING (1)
 
 using namespace std;
 
@@ -17,8 +17,8 @@ using namespace std;
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (40000)
-#define DATA_PLANE_BAUD (441600)
+#define MAX_DATA_BUFFER_SIZE (89000)
+#define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
 
 enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, TEST};
 
