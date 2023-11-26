@@ -154,7 +154,7 @@ void dataStreamReceived(){
     int newBytes = internalNetworkStackPtr -> dataPlane -> available();
     int currentSize = internalNetworkStackPtr -> dataBuffer.size();
     
-    Serial.print("Data received!");
+    // Serial.print("Data received!");
     // Serial.printf("Buffer size is %d\n\r", internalNetworkStackPtr->dataBuffer.size());
 
     #ifdef TIME_STREAMING
@@ -183,5 +183,5 @@ void dataStreamReceived(){
     } 
     #endif
 
-    Serial.printf("Attempted to add %d bytes and now there are %d bytes in the deque (previously %d)\n\r", newBytes, internalNetworkStackPtr -> dataBuffer.size(), currentSize); //DEBUG STATEMENT
+    // Serial.printf("Attempted to add %d bytes and now there are %d bytes in the deque (previously %d)\n\r", newBytes, internalNetworkStackPtr -> dataBuffer.size(), currentSize); //DEBUG STATEMENT
 }
