@@ -9,7 +9,8 @@
 #include <set>
 #include <deque>
 
-// #define TIME_STREAMING (1)
+#define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
+// #define DIRECT_TRANSFER //If defined, BT data streaming is direct from the UART buffer
 
 using namespace std;
 
@@ -17,10 +18,16 @@ using namespace std;
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (89000)
+#define MAX_DATA_BUFFER_SIZE (40000)
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
+#define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (4608)
+#ifdef DIRECT_TRANSFER
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000)
+#else
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (20000) //1024
+#endif
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, DROP, TEST};
 
 /* Control plane callback function
 *
@@ -32,10 +39,13 @@ void uartFrameReceived();
 */
 void dataStreamReceived();
 
+int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
+
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
 *
 */
 void inline flushSerialBuffer(HardwareSerial * serial);
+
 
 class BlueteethPacket {
 
@@ -90,14 +100,8 @@ public:
 
     friend BlueteethPacket;
 
-    /* Workaround for not being able to set a member function as a callback to serial interrupts through HardwareSerial::onRecieve
-    *
-    */
+    friend int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
     friend void uartFrameReceived();
-
-    /* Workaround for not being able to set a member function as a callback to serial interrupts through HardwareSerial::onRecieve
-    *
-    */
     friend void dataStreamReceived();
 
     /* Constructor
@@ -120,13 +124,16 @@ public:
     
     }
 
-    void begin(){
+    virtual void begin(){
 
         this -> controlPlane -> begin(115200);
         this -> controlPlane -> onReceive(uartFrameReceived);
         //441600
+        this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
+        #ifndef DIRECT_TRANSFER
         this -> dataPlane -> onReceive(dataStreamReceived);
+        #endif
     }
     
     /* Queues a packet to be sent to the rest of the network upon receiving a token
@@ -177,7 +184,8 @@ public:
 
     /*  Stream data over the data plane -> This version will stream more bytes
     *
-    *   @byte - The byte being transmitted;
+    *   @bytes - The bytes being transmitted.
+    *   @length - The number of bytes being transmitted.
     */
     void streamData(const uint8_t * bytes, int length){
         // Serial.printf("Sending %d bytes data...\n\r", length);
@@ -266,6 +274,14 @@ public:
         initializationPacket.type = INITIALIZAITON;
         initializationPacket.payload[0] = 1;
         this -> queuePacket(1, initializationPacket);
+    }
+
+    void begin(){
+        this -> controlPlane -> begin(115200);
+        this -> controlPlane -> onReceive(uartFrameReceived);
+        
+        this -> dataPlane->setTxBufferSize(DATA_PLANE_SERIAL_TX_BUFFER_SIZE);
+        this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19);
     }
 
     /* To be called from a watchdog timer task to generate a new token if the token is lost.
