@@ -97,54 +97,6 @@ void uartFrameReceived(){
 }
 
 
-#define SENTINEL_CHAR (0b11111111) 
-
-void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & dataBuffer){
-
-    uint8_t select_lower;
-
-    size_t packagedDataEnd = len + (len/7)*2; //For each 7 bytes, 1 sentinal character byte and 8 0 bits are added.
-    for(int frame = 0; frame < packagedDataEnd; frame += 9){
-        select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
-        
-        packedData[frame] = SENTINEL_CHAR;
-        packedData[frame + 1] = 0; //Need to set the first actual packaged byte to 0 for loop to work
-        for(int byte = 1; byte < 8; byte++){
-            packedData[frame + byte] += dataBuffer.front() >> byte;
-            packedData[frame + byte + 1] = (select_lower & dataBuffer.front()) << (7 - byte); 
-            dataBuffer.pop_front();
-
-            select_lower = (select_lower << 1) + 1;
-        }
-    }
-
-}
-
-void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dataBuffer){
-  uint8_t select_lower;
-  uint8_t select_upper;
-
-  int cnt = 0;
-  //Circle through all of the data in the stream
-  while (cnt < len){
-    if (packedData[cnt++] == SENTINEL_CHAR){ //Don't begin unpacking until the sentinal character is found 
-        
-      select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte  
-      select_lower = 0b01000000; //used to select the lower portion of the unpacked byte;
-        
-      for(int i = 0; i < 7; i++){
-          dataBuffer.push_back(
-            ((packedData[cnt + i] & select_upper) << (i + 1)) + 
-            ((packedData[cnt + i + 1] & select_lower) >> (6 - i))
-          ); 
-          select_upper = select_upper >> 1;
-          select_lower += 1 << (5 - i);
-        }
-        cnt += 7;
-    }
-  }
-}
-
 void dataStreamReceived(){
 
     //Static to save time on allocation
@@ -154,11 +106,8 @@ void dataStreamReceived(){
     int newBytes = internalNetworkStackPtr -> dataPlane -> available();
     int currentSize = internalNetworkStackPtr -> dataBuffer.size();
     
-    // Serial.print("Data received!");
-    // Serial.printf("Buffer size is %d\n\r", internalNetworkStackPtr->dataBuffer.size());
-
     #ifdef TIME_STREAMING
-    if (internalNetworkStackPtr -> dataBuffer.size() == 0) { //sometimes noise will be registered as a packet
+    if (internalNetworkStackPtr -> dataBuffer.size() == 0) { 
         streamTime = millis();
     }
     #endif
@@ -169,9 +118,11 @@ void dataStreamReceived(){
         flushToken = true;
         // Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
     }
-
-    internalNetworkStackPtr -> dataPlane -> readBytes(tmp, newBytes);
-    unpackDataStream(tmp, newBytes, internalNetworkStackPtr -> dataBuffer);
+    
+    static int bytesReady;
+    bytesReady = newBytes - (newBytes % FRAME_SIZE);
+    internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
+    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
     if(flushToken){
         flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
@@ -183,5 +134,5 @@ void dataStreamReceived(){
     } 
     #endif
 
-    // Serial.printf("Attempted to add %d bytes and now there are %d bytes in the deque (previously %d)\n\r", newBytes, internalNetworkStackPtr -> dataBuffer.size(), currentSize); //DEBUG STATEMENT
+    // Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize)/7*9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
 }

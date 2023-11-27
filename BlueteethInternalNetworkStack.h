@@ -20,12 +20,23 @@ using namespace std;
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (40000)
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
-#define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (4608)
+
+#define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
+#define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
+
 #ifdef DIRECT_TRANSFER
 #define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000)
 #else
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (20000) //1024
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000) //1024
 #endif
+
+//Macros for framing
+#define FRAME_START_SENTINEL (0b11111111)
+#define FRAME_PADDING_SENTINEL (0b10000000)
+#define FRAME_SIZE (33)
+#define BYTES_PER_ROTATION (8)
+#define ROTATIONS_PER_FRAME (4)
+#define PAYLOAD_SIZE (28)
 
 enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, DROP, TEST};
 
@@ -38,6 +49,93 @@ void uartFrameReceived();
 *
 */
 void dataStreamReceived();
+
+/* Packages data into BlueTeeth Data Stream frames
+*
+*  @PackedData - A pointer to a buffer where the packed data will be stored.
+*  @len - The length of the unpacked data.
+*  @dataBuffer - A double-ended queue containing the unpacked data.
+*  @requestPadding - If the length of the data is not an integer multiple of the frame size, you can insert the last frame with real data and pad out the rest with a padding character.
+*/
+void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & payloadBuffer, bool requestPadding = true){
+  
+    uint8_t select_lower;
+    size_t packagedDataEnd = ((len % PAYLOAD_SIZE == 0) ? len :  len + ((len + 1) % PAYLOAD_SIZE) ) * FRAME_SIZE/PAYLOAD_SIZE; //Converting len to an integer multiple of the frame size
+
+    //dataEnd is where the actual data is finished. After this value, all values are padding.
+    //It is the number of frames in addition to the remaining length (accounting for the extra byte added per rotation)
+    size_t dataEnd = len / PAYLOAD_SIZE * FRAME_SIZE + (len % PAYLOAD_SIZE) / 7 * BYTES_PER_ROTATION + len % 7; 
+
+    // Serial.printf("packageDataEnd is %d, dataEnd is %d, and payloadBuffer size is %d\n\r", packagedDataEnd, dataEnd, payloadBuffer.size());
+
+    for(volatile int frame = 0; frame < packagedDataEnd; frame += FRAME_SIZE){
+        packedData[frame] = FRAME_START_SENTINEL;
+        for (volatile int rotation = 0; rotation < (ROTATIONS_PER_FRAME * BYTES_PER_ROTATION) ; rotation += BYTES_PER_ROTATION){
+          select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
+          packedData[frame + rotation + 1] = 0; //Necessary as the first byte is some random number prior to starting algorithm 
+          for(volatile int byte = 1; byte < BYTES_PER_ROTATION; byte++){
+              
+              if ((frame + rotation + byte) <= dataEnd) {
+                packedData[frame + rotation + byte] += payloadBuffer.front() >> byte;
+                packedData[frame + rotation + byte + 1] = (select_lower & payloadBuffer.front()) << (7 - byte);           
+                payloadBuffer.pop_front();
+                select_lower = (select_lower << 1) + 1;
+              }
+              else {         
+                packedData[frame + rotation + byte + 1] = FRAME_PADDING_SENTINEL;
+                if (frame + rotation + byte + 1 >= packagedDataEnd){
+                    // Serial.print("Went out of bounds... Exitting now.\n\r");
+                    return;
+                }
+              }
+          }
+        }
+    }
+}
+
+/* Unpacks data from BlueTeeth data stream frames into buffer
+*
+*  @PackedData - A pointer to a buffer where the packed data is stored.
+*  @len - The length of the packed data.
+*  @dataBuffer - A double-ended queue containing the unpacked data.
+*/
+void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dataBuffer){
+  uint8_t select_lower;
+  uint8_t select_upper;
+
+  // cout << "Length is " << len << endl;
+  int droppedBytes = 0;
+  int cnt = 0;
+  //Circle through all of the data in the stream
+  while (cnt < len){
+
+  loop_start:
+
+    if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+      for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; rotation++){
+        select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+        select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+        for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); byte++){
+          if (packedData[cnt + byte + 1] == FRAME_PADDING_SENTINEL){
+            goto loop_start; //Can't break out of nested loop.
+          }
+          dataBuffer.push_back(
+            ((packedData[cnt + rotation + byte] & select_upper) << (byte + 1)) + 
+            ((packedData[cnt + rotation + byte + 1] & select_lower) >> (6 - byte))
+          ); 
+          select_upper = select_upper >> 1;
+          select_lower += 1 << (5 - byte);
+        }
+  
+        cnt += (BYTES_PER_ROTATION - 1);
+      
+      }
+      cnt += BYTES_PER_ROTATION;
+    }
+    else droppedBytes++;
+  }
+//   if (droppedBytes > 0) Serial.printf("Threw away %d bytes out of %d...\n\r", droppedBytes, len);
+}
 
 int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
 
@@ -230,6 +328,17 @@ public:
         }
 
         this -> queuePacket(1, receivedPacket);
+    }
+
+    int getDataPlaneBytesAvailable(){
+
+        return this -> dataPlane -> available();
+    
+    }
+    int getDataPlaneBytesAvailableToWrite(){
+
+        return this -> dataPlane -> availableForWrite();
+    
     }
 
     deque<uint8_t> dataBuffer;
