@@ -125,6 +125,7 @@ void dataStreamReceived(){
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
     if(flushToken){
+        Serial.printf("Flushing the serial buffer...\n\r");
         flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     }
 
@@ -134,5 +135,7 @@ void dataStreamReceived(){
     } 
     #endif
 
+    // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
+    // Serial.printf("Received %d bytes\n\r", newBytes);
     // Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize)/7*9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
 }

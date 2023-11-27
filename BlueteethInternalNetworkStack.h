@@ -21,13 +21,13 @@ using namespace std;
 #define MAX_DATA_BUFFER_SIZE (40000)
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
 
-#define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
+#define MAX_DATA_PLANE_PAYLOAD_SIZE (112)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
 
 #ifdef DIRECT_TRANSFER
 #define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000)
 #else
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000) //1024
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4096) //1024
 #endif
 
 //Macros for framing
@@ -132,9 +132,12 @@ void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dat
       }
       cnt += BYTES_PER_ROTATION;
     }
-    else droppedBytes++;
+    else{
+        // Serial.printf("[%d] ", cnt);
+        droppedBytes++;
+    }
   }
-//   if (droppedBytes > 0) Serial.printf("Threw away %d bytes out of %d...\n\r", droppedBytes, len);
+//   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
 
 int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
