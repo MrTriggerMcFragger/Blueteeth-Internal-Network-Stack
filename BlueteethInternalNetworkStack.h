@@ -14,6 +14,8 @@
 
 using namespace std;
 
+#define DATA_STREAM_TEST_SIZE (5016)
+
 #define MAX_PAYLOAD_SIZE (10)
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed

@@ -134,7 +134,7 @@ void dataStreamReceived(){
     }
 
     #ifdef TIME_STREAMING
-    if (internalNetworkStackPtr -> dataBuffer.size() >= 40000){ //DEBUG STATEMENT
+    if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
         streamTime = millis() - streamTime;
     } 
     #endif
