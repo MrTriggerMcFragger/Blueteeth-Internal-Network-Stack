@@ -107,9 +107,8 @@ void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dat
   int droppedBytes = 0;
   int cnt = 0;
   //Circle through all of the data in the stream
-  while (cnt < len){
-
   loop_start:
+  while (cnt < len){
 
     if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
       for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; rotation++){
@@ -117,29 +116,26 @@ void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dat
         select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
         for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); byte++){
           if (packedData[cnt + byte + 1] == FRAME_PADDING_SENTINEL){
+            cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //bytes in unused rotations   
             goto loop_start; //Can't break out of nested loop.
           }
           dataBuffer.push_back(
-            ((packedData[cnt + rotation + byte] & select_upper) << (byte + 1)) + 
-            ((packedData[cnt + rotation + byte + 1] & select_lower) >> (6 - byte))
+            ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+            ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
           ); 
           select_upper = select_upper >> 1;
           select_lower += 1 << (5 - byte);
         }
-  
-        cnt += (BYTES_PER_ROTATION - 1);
-      
+        cnt += BYTES_PER_ROTATION;
       }
-      cnt += BYTES_PER_ROTATION;
     }
-    else{
+    else {
         // Serial.printf("[%d] ", cnt);
         droppedBytes++;
     }
   }
 //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
-
 int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.

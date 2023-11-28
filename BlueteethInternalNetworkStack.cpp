@@ -121,7 +121,11 @@ void dataStreamReceived(){
     
     static int bytesReady;
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
-    internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
+    // internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
+    // for (int pos = 0; pos < bytesReady; pos += FRAME_SIZE){
+    //     Serial.printf("%u ", tmp[pos]);
+    // }
+    // Serial.println();
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
     if(flushToken){
