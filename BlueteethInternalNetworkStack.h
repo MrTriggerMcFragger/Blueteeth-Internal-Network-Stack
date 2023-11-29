@@ -14,16 +14,16 @@
 
 using namespace std;
 
-#define DATA_STREAM_TEST_SIZE (5016)
+#define DATA_STREAM_TEST_SIZE (40320) // 5040
 
 #define MAX_PAYLOAD_SIZE (10)
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (40000)
+#define MAX_DATA_BUFFER_SIZE (42000)
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
 
-#define MAX_DATA_PLANE_PAYLOAD_SIZE (112)
+#define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
 
 #ifdef DIRECT_TRANSFER
@@ -75,7 +75,7 @@ void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & paylo
         for (volatile int rotation = 0; rotation < (ROTATIONS_PER_FRAME * BYTES_PER_ROTATION) ; rotation += BYTES_PER_ROTATION){
           select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
           packedData[frame + rotation + 1] = 0; //Necessary as the first byte is some random number prior to starting algorithm 
-          for(volatile int byte = 1; byte < BYTES_PER_ROTATION; byte++){
+          for(volatile int byte = 1; byte < BYTES_PER_ROTATION; ++byte){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
               
               if ((frame + rotation + byte) <= dataEnd) {
                 packedData[frame + rotation + byte] += payloadBuffer.front() >> byte;
@@ -113,10 +113,10 @@ void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dat
   while (cnt < len){
 
     if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
-      for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; rotation++){
+      for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
         select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
         select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
-        for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); byte++){
+        for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
           if (packedData[cnt + byte + 1] == FRAME_PADDING_SENTINEL){
             cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //bytes in unused rotations   
             goto loop_start; //Can't break out of nested loop.
@@ -130,15 +130,15 @@ void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dat
         }
         cnt += BYTES_PER_ROTATION;
       }
+    //   Serial.print("Pushed back data...\n\r");
     }
     else {
         // Serial.printf("[%d] ", cnt);
-        droppedBytes++;
+        ++droppedBytes;
     }
   }
 //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
-int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
 *
@@ -158,7 +158,7 @@ public:
         this -> srcAddr = 255;
         this -> dstAddr = 0;
         this -> type = NONE;
-        for (int i = 0; i < MAX_PAYLOAD_SIZE; i++){
+        for (int i = 0; i < MAX_PAYLOAD_SIZE; ++i){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++i rather than i++)
             payload[i] = NULL;
         }
 
@@ -179,7 +179,7 @@ public:
         this -> srcAddr = srcAddr;
         this -> dstAddr = dstAddr;
         this -> type = NONE;
-        for (int i = 0; i < MAX_PAYLOAD_SIZE; i++){
+        for (int i = 0; i < MAX_PAYLOAD_SIZE; ++i){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++i rather than i++)
             payload[i] = NULL;
         }
     }
@@ -342,6 +342,14 @@ public:
     
     }
 
+    void recordDataReceptionTime(){
+        this -> lastDataReceptionTime = millis();
+    }
+
+    uint32_t getLastDataReceptionTime(){
+        return this -> lastDataReceptionTime;
+    }
+
     deque<uint8_t> dataBuffer;
 
 
@@ -358,6 +366,7 @@ protected:
     }
 
     uint8_t address;
+    uint32_t lastDataReceptionTime;
     string deviceType = "Base";
     QueueHandle_t transmitPacketBuffer;
     QueueHandle_t receivedPacketBuffer; 

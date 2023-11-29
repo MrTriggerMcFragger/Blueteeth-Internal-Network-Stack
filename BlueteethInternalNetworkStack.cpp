@@ -98,13 +98,18 @@ void uartFrameReceived(){
 
 
 void dataStreamReceived(){
+    //Making variables static to try and save time on allocating memory on each function call
+    static int newBytes;
+    static int currentSize;
+    static bool flushToken;
+    static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
 
-    //Static to save time on allocation
-    static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; //Faster to temporarily read in bits with one readBytes function call than repeatedly read. Need to adapt readBytes for an iterator.
+    if (internalNetworkStackPtr -> dataPlane -> available() >= (DATA_PLANE_SERIAL_RX_BUFFER_SIZE - 1) ){
+        Serial.println("The serial buffer is full");
+    }
 
-
-    int newBytes = internalNetworkStackPtr -> dataPlane -> available();
-    int currentSize = internalNetworkStackPtr -> dataBuffer.size();
+    newBytes = internalNetworkStackPtr -> dataPlane -> available();
+    currentSize = internalNetworkStackPtr -> dataBuffer.size();
     
     #ifdef TIME_STREAMING
     if (internalNetworkStackPtr -> dataBuffer.size() == 0) { 
@@ -112,7 +117,7 @@ void dataStreamReceived(){
     }
     #endif
     
-    bool flushToken = false;
+    flushToken = false;
     if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
         newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
         flushToken = true;
@@ -120,11 +125,16 @@ void dataStreamReceived(){
     }
     
     static int bytesReady;
+    static int bytesProcessed; //DEBUG VARIABLE
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
-    // internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
+    internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
     // for (int pos = 0; pos < bytesReady; pos += FRAME_SIZE){
-    //     Serial.printf("%u ", tmp[pos]);
+    //     if (tmp[pos] != FRAME_START_SENTINEL){
+    //         // Serial.printf("One byte dropped between %d bytes received and %d bytes received\n\r", bytesProcessed + pos - FRAME_SIZE, bytesProcessed + pos);
+    //     }
+    //     // Serial.printf("%u ", tmp[pos]);
     // }
+    bytesProcessed += bytesReady;
     // Serial.println();
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
@@ -138,6 +148,8 @@ void dataStreamReceived(){
         streamTime = millis() - streamTime;
     } 
     #endif
+
+    internalNetworkStackPtr -> recordDataReceptionTime();
 
     // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     // Serial.printf("Received %d bytes\n\r", newBytes);
