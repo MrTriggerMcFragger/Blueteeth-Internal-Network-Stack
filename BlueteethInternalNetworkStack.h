@@ -59,25 +59,22 @@ void dataStreamReceived();
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 *  @requestPadding - If the length of the data is not an integer multiple of the frame size, you can insert the last frame with real data and pad out the rest with a padding character.
 */
-void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & payloadBuffer, bool requestPadding = true){
-  
+void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> & payloadBuffer, bool requestPadding = true){
+
     uint8_t select_lower;
-    size_t packagedDataEnd = ((len % PAYLOAD_SIZE == 0) ? len :  len + ((len + 1) % PAYLOAD_SIZE) ) * FRAME_SIZE/PAYLOAD_SIZE; //Converting len to an integer multiple of the frame size
+    //Converting dataLength to an integer multiple of the frame size
+  
+    size_t finalFrameEnd = ceil( (double) dataLength / PAYLOAD_SIZE ) * FRAME_SIZE;
+    size_t finalPayloadBytePosition = dataLength/PAYLOAD_SIZE * FRAME_SIZE + 1 + (dataLength % PAYLOAD_SIZE)/BYTES_PER_ROTATION + dataLength % PAYLOAD_SIZE; //Size of frames prior to the final frame + Frame start sentinel + Bytes from complete rotations of final frame + Bytes from incomplete rotation of the final frame.
 
-    //dataEnd is where the actual data is finished. After this value, all values are padding.
-    //It is the number of frames in addition to the remaining length (accounting for the extra byte added per rotation)
-    size_t dataEnd = len / PAYLOAD_SIZE * FRAME_SIZE + (len % PAYLOAD_SIZE) / 7 * BYTES_PER_ROTATION + len % 7; 
-
-    // Serial.printf("packageDataEnd is %d, dataEnd is %d, and payloadBuffer size is %d\n\r", packagedDataEnd, dataEnd, payloadBuffer.size());
-
-    for(volatile int frame = 0; frame < packagedDataEnd; frame += FRAME_SIZE){
+    for(volatile int frame = 0; frame < finalFrameEnd; frame += FRAME_SIZE){
         packedData[frame] = FRAME_START_SENTINEL;
         for (volatile int rotation = 0; rotation < (ROTATIONS_PER_FRAME * BYTES_PER_ROTATION) ; rotation += BYTES_PER_ROTATION){
           select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
           packedData[frame + rotation + 1] = 0; //Necessary as the first byte is some random number prior to starting algorithm 
           for(volatile int byte = 1; byte < BYTES_PER_ROTATION; ++byte){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
-              
-              if ((frame + rotation + byte) <= dataEnd) {
+
+              if ((frame + rotation + byte) < finalPayloadBytePosition) {
                 packedData[frame + rotation + byte] += payloadBuffer.front() >> byte;
                 packedData[frame + rotation + byte + 1] = (select_lower & payloadBuffer.front()) << (7 - byte);           
                 payloadBuffer.pop_front();
@@ -85,8 +82,9 @@ void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & paylo
               }
               else {         
                 packedData[frame + rotation + byte + 1] = FRAME_PADDING_SENTINEL;
-                if (frame + rotation + byte + 1 >= packagedDataEnd){
-                    // Serial.print("Went out of bounds... Exitting now.\n\r");
+                // cout << "Placing pading...." << endl;
+                if (frame + rotation + byte + 1 >= finalFrameEnd){
+                    Serial.println("Something went wrong trying to package a frame...");
                     return;
                 }
               }
@@ -95,49 +93,62 @@ void inline packDataStream(uint8_t * packedData, int len, deque<uint8_t> & paylo
     }
 }
 
+
 /* Unpacks data from BlueTeeth data stream frames into buffer
 *
 *  @PackedData - A pointer to a buffer where the packed data is stored.
 *  @len - The length of the packed data.
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
-void inline unpackDataStream(uint8_t * packedData, int len, deque<uint8_t> & dataBuffer){
-  uint8_t select_lower;
-  uint8_t select_upper;
+void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
+    uint8_t select_lower;
+    uint8_t select_upper;
 
-  // cout << "Length is " << len << endl;
-  int droppedBytes = 0;
-  int cnt = 0;
-  //Circle through all of the data in the stream
-  loop_start:
-  while (cnt < len){
+    // cout << "Length is " << totalFrameLength << endl;
+    int droppedBytes = 0;
+    int cnt = 0;
+    //Circle through all of the data in the stream
 
-    if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
-      for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
-        select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
-        select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
-        for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-          if (packedData[cnt + byte + 1] == FRAME_PADDING_SENTINEL){
-            cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //bytes in unused rotations   
-            goto loop_start; //Can't break out of nested loop.
-          }
-          dataBuffer.push_back(
-            ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
-            ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
-          ); 
-          select_upper = select_upper >> 1;
-          select_lower += 1 << (5 - byte);
+    loop_start:
+    while (cnt < totalFrameLength){
+
+        if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+
+        for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+            select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+            select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+            for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+            
+            switch(packedData[cnt + byte + 1]){
+                
+                case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
+                for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
+                for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
+                //Don't break yet as need to move the count ahead
+                
+                case FRAME_PADDING_SENTINEL:
+                cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
+                goto loop_start; //Can't break out of nested loop.
+                
+                default:
+                dataBuffer.push_back(
+                    ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+                    ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                ); 
+                select_upper = select_upper >> 1;
+                select_lower += 1 << (5 - byte);
+            }
+            }
+            cnt += BYTES_PER_ROTATION;
         }
-        cnt += BYTES_PER_ROTATION;
-      }
-    //   Serial.print("Pushed back data...\n\r");
+        //   Serial.print("Pushed back data...\n\r");
+        }
+        else {
+            // Serial.printf("[%d] ", cnt);
+            ++droppedBytes;
+        }
     }
-    else {
-        // Serial.printf("[%d] ", cnt);
-        ++droppedBytes;
-    }
-  }
-//   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
+    //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
