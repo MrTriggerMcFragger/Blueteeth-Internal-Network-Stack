@@ -270,11 +270,9 @@ public:
     }
 
     void  flushDataPlaneSerialBuffer(){
-        while (this -> dataPlane -> available() > 0){
-            this ->dataPlane -> read();
-        }
+        static uint8_t tmp[DATA_PLANE_SERIAL_RX_BUFFER_SIZE];
+        this -> dataPlane -> readBytes(tmp, this -> dataPlane -> available()); //Faster than individual reads
     }
-
     /*  Retrieves the device's address.
     *
     *   @return - This device's address.

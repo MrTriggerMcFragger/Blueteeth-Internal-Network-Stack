@@ -110,6 +110,8 @@ void dataStreamReceived(){
     static const std::string accessIdentifier = "DATA PLANE";
     static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
 
+    // Serial.printf("UART task priority is %d\n\r", uxTaskPriorityGet(NULL));
+
     portENTER_CRITICAL(&mutex);
 
     internalNetworkStackPtr -> networkAccessingResources = true;
@@ -176,5 +178,5 @@ void dataStreamReceived(){
 
     // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     // Serial.printf("Received %d bytes\n\r", newBytes);
-    // Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize)/7*9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
+    Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize) / 7 * 9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
 }
