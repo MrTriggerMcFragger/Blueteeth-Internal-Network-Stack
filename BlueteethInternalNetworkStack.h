@@ -20,17 +20,12 @@ using namespace std;
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (42000)
-#define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
+#define MAX_DATA_BUFFER_SIZE (40320)
+#define DATA_PLANE_BAUD (6720000)//6720000 (WORKING) 3840000 (STABLE)
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
-#define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-
-#ifdef DIRECT_TRANSFER
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000)
-#else
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4096) //1024
-#endif
+#define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1056) //Make an integer multiple of the frame size
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4125) //Make an integer multiple of the frame size
 
 //Macros for framing
 #define FRAME_START_SENTINEL (0b11111111)
@@ -232,6 +227,7 @@ public:
 
         this -> address = 255; //Max value (indicates that the node has not been assigned an address)
         this -> dataBufferWriteInProgress = false;
+        this -> dataBufferAccessor = "UNINITIALIZED";
     }
 
     virtual void begin(){
@@ -363,16 +359,61 @@ public:
 
     deque<uint8_t> dataBuffer;
 
-    void declareActiveDataBufferReadWrite(){
+    /*  Attempt to declare a write in progress.
+    *
+    *   @return - Whether the declaration was successful or not (true = success, false = failure) 
+    */
+    bool declareActiveDataBufferReadWrite(std::string accessIdentifier){
+
+        static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
+        portENTER_CRITICAL(&mutex);
+
+        if (dataBufferWriteInProgress == true){
+            portEXIT_CRITICAL(&mutex);
+            Serial.printf("<%s> tried access the data buffer, but <%s> is utilizing the resource.\n\r", accessIdentifier.c_str(), dataBufferAccessor.c_str());
+            return false;
+        }
+
         dataBufferWriteInProgress = true;
+        dataBufferAccessor.assign(accessIdentifier);
+        portEXIT_CRITICAL(&mutex);
+        return true;
     }
 
-    void declareDataBufferSafeToAccess(){
+    /*  Attempt to declare that it's safe to read/write from the data buffer
+    *
+    *   @return - Whether the access state was changed or not (true = went from unsafe to safe, false = was already safe) 
+    */
+    bool declareDataBufferSafeToAccess(std::string accessIdentifier){
+
+        static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
+        portENTER_CRITICAL(&mutex);
+
+        if (dataBufferWriteInProgress == false){
+            portEXIT_CRITICAL(&mutex);
+            return false;
+        }
+        if ((dataBufferAccessor != "NOBODY") && (accessIdentifier != dataBufferAccessor)){ //Something weird is happening here.. It should be impossible to get the NOBODY identifier in this check
+            portEXIT_CRITICAL(&mutex);
+            Serial.printf("<%s> tried to declare the databuffer safe to access, but <%s> is utilizing the resource.\n\r", accessIdentifier.c_str() , dataBufferAccessor.c_str());
+            return false;
+        }
         dataBufferWriteInProgress = false;
+        dataBufferAccessor = "NOBODY";
+        portEXIT_CRITICAL(&mutex);
+        return true;
     }
 
     bool checkForActiveDataBufferWrite(){
         return dataBufferWriteInProgress;
+    }
+
+    std::string getOriginalAccessor(){
+        return this -> dataBufferAccessor;
+    }
+
+    void dataBufferTimeoutReset(){
+        this -> lastDataReceptionTime = millis();
     }
 
 protected:
@@ -388,7 +429,7 @@ protected:
     }
 
     bool dataBufferWriteInProgress;
-
+    std::string dataBufferAccessor;
     uint8_t address;
     uint32_t lastDataReceptionTime;
     string deviceType = "Base";

@@ -104,6 +104,8 @@ void dataStreamReceived(){
     static bool flushToken;
     static int bytesReady;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
+    static const std::string accessIdentifier = "DATA PLANE";
+
 
     // if (internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
     //     Serial.println("The serial buffer is full");
@@ -133,7 +135,9 @@ void dataStreamReceived(){
     //     // Serial.printf("%u ", tmp[pos]);
     // }
 
-    internalNetworkStackPtr -> declareActiveDataBufferReadWrite();
+    if (internalNetworkStackPtr -> declareActiveDataBufferReadWrite(accessIdentifier) == false){
+        return;
+    }
 
     if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
         Serial.printf("Something went wrong before unpacking. The buffer size is %d\n\r", internalNetworkStackPtr -> dataBuffer.size());
@@ -144,8 +148,10 @@ void dataStreamReceived(){
     if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
         Serial.printf("Something went wrong after packing. The buffer size is %d\n\r", internalNetworkStackPtr -> dataBuffer.size());
     }
-
-    internalNetworkStackPtr -> declareDataBufferSafeToAccess();
+    
+    if (internalNetworkStackPtr -> declareDataBufferSafeToAccess(accessIdentifier) == false){
+        Serial.print("[DataPlane] Another task accessed the data buffer when it wasn't supposed to...\n\r");
+    }
 
     if(internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE){
         Serial.printf("Flushing the serial buffer...\n\r");
