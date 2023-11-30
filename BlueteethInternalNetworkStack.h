@@ -35,7 +35,8 @@ using namespace std;
 #define ROTATIONS_PER_FRAME (4)
 #define PAYLOAD_SIZE (28)
 
-enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, DROP, TEST};
+enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, DROP, TEST, RESERVED};
+//RESERVED used for error checking (if > RESERVED) the packet is a fabrication
 
 /* Control plane callback function
 *
@@ -237,9 +238,8 @@ public:
         //441600
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
-        #ifndef DIRECT_TRANSFER
         this -> dataPlane -> onReceive(dataStreamReceived);
-        #endif
+        this -> dataPlaneMutex = xSemaphoreCreateMutex();
     }
     
     /* Queues a packet to be sent to the rest of the network upon receiving a token
@@ -268,8 +268,10 @@ public:
 
     }
 
-    void flushDataPlaneSerialBuffer(){
-        flushSerialBuffer(this -> dataPlane);
+    void  flushDataPlaneSerialBuffer(){
+        while (this -> dataPlane -> available() > 0){
+            this ->dataPlane -> read();
+        }
     }
 
     /*  Retrieves the device's address.
@@ -349,11 +351,11 @@ public:
     
     }
 
-    void recordDataReceptionTime(){
+    void recordDataBufferAccessTime(){
         this -> lastDataReceptionTime = millis();
     }
 
-    uint32_t getLastDataReceptionTime(){
+    uint32_t getLastDataBufferAccessTime(){
         return this -> lastDataReceptionTime;
     }
 
@@ -366,7 +368,7 @@ public:
     bool declareActiveDataBufferReadWrite(std::string accessIdentifier){
 
         static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
-        portENTER_CRITICAL(&mutex);
+        // portENTER_CRITICAL(&mutex);
 
         if (dataBufferWriteInProgress == true){
             portEXIT_CRITICAL(&mutex);
@@ -376,7 +378,7 @@ public:
 
         dataBufferWriteInProgress = true;
         dataBufferAccessor.assign(accessIdentifier);
-        portEXIT_CRITICAL(&mutex);
+        // portEXIT_CRITICAL(&mutex);
         return true;
     }
 
@@ -416,6 +418,9 @@ public:
         this -> lastDataReceptionTime = millis();
     }
 
+
+    xSemaphoreHandle dataPlaneMutex;
+    
 protected:
     
     void transmitPacket(BlueteethPacket packet){
@@ -466,6 +471,7 @@ public:
         
         this -> dataPlane->setTxBufferSize(DATA_PLANE_SERIAL_TX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19);
+        this -> dataPlaneMutex = xSemaphoreCreateMutex();
     }
 
     /* To be called from a watchdog timer task to generate a new token if the token is lost.
