@@ -21,6 +21,7 @@ using namespace std;
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (40320)
+
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING) 3840000 (STABLE)
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
@@ -359,6 +360,10 @@ public:
         return this -> lastDataReceptionTime;
     }
 
+    uint32_t timeElapsedSinceLastDataBufferAccess(){
+        return millis() - this -> lastDataReceptionTime;
+    }
+
     deque<uint8_t> dataBuffer;
 
     /*  Attempt to declare a write in progress.
@@ -418,6 +423,10 @@ public:
         this -> lastDataReceptionTime = millis();
     }
 
+    bool isNetworkAccessingResources(){
+        return networkAccessingResources;
+    }
+
 
     xSemaphoreHandle dataPlaneMutex;
     
@@ -432,7 +441,8 @@ protected:
             this -> controlPlane -> write(packet.payload[i]);
         }
     }
-
+    
+    bool networkAccessingResources;
     bool dataBufferWriteInProgress;
     std::string dataBufferAccessor;
     uint8_t address;

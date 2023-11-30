@@ -108,11 +108,11 @@ void dataStreamReceived(){
     static int bytesReady;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
     static const std::string accessIdentifier = "DATA PLANE";
-
-
     static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
 
     portENTER_CRITICAL(&mutex);
+
+    internalNetworkStackPtr -> networkAccessingResources = true;
 
     // if (internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
     //     Serial.println("The serial buffer is full");
@@ -127,48 +127,33 @@ void dataStreamReceived(){
     newBytes = internalNetworkStackPtr -> dataPlane -> available();
     currentSize = internalNetworkStackPtr -> dataBuffer.size();
 
-    if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
-        Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
+    if (currentSize + (newBytes / FRAME_SIZE * PAYLOAD_SIZE) > MAX_DATA_BUFFER_SIZE){
+        // Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
         newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
-        Serial.printf(" Now my expected size is %d bytes.", newBytes);
+        // Serial.printf(" Now my expected size is %d bytes.", newBytes);
     }
     
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
 
     portEXIT_CRITICAL(&mutex); //exit critical to read data
 
+    // if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
+    //     static bool token = false;
+    //     if (token == false){
+    //         Serial.printf("Forcing fast recovery.\n\r");
+    //         if ((bytesReady - FRAME_SIZE) > 0){
+    //             bytesReady -= FRAME_SIZE;
+    //         }
+    //     }
+    //     token = true;
+    // }
+
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
 
-    Serial.printf("I now have %d bytes in my buffer.", internalNetworkStackPtr -> dataBuffer.size());
-
-    
-    // for (int pos = 0; pos < bytesReady; pos += FRAME_SIZE){
-    //     if (tmp[pos] != FRAME_START_SENTINEL){
-    //         // Serial.printf("One byte dropped between %d bytes received and %d bytes received\n\r", bytesProcessed + pos - FRAME_SIZE, bytesProcessed + pos);
-    //     }
-    //     // Serial.printf("%u ", tmp[pos]);
-    // }
-    // Serial.println("Dataplane is trying to take the mutex...");
-
     while (xSemaphoreTake(internalNetworkStackPtr -> dataPlaneMutex, 1000) == pdFALSE){
-        // Serial.println("Dataplane is still trying to take the mutex...");
     }
-
-    // Serial.println("Dataplane took the mutex...");
-
-    // portENTER_CRITICAL(&mutex);
-
-    // if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
-    //     Serial.printf("Something went wrong before unpacking. The buffer size is %d\n\r", internalNetworkStackPtr -> dataBuffer.size());
-    // }
     
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
-    
-    // Serial.printf("Dataplane unpacked %d bytes... (attempted %d)\n\r", internalNetworkStackPtr -> dataBuffer.size(), bytesReady);
-
-    // if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
-    //     Serial.printf("Something went wrong after packing. The buffer size is %d\n\r", internalNetworkStackPtr -> dataBuffer.size());
-    // }
 
     if(internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
         Serial.printf("Flushing the serial buffer...\n\r");
@@ -186,6 +171,8 @@ void dataStreamReceived(){
     #endif
     
     internalNetworkStackPtr -> recordDataBufferAccessTime();
+
+    internalNetworkStackPtr -> networkAccessingResources = false;
 
     // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     // Serial.printf("Received %d bytes\n\r", newBytes);
