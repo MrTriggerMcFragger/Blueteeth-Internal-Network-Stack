@@ -114,38 +114,38 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
 
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
 
-        for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
-            select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
-            select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
-            for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-            
-            switch(packedData[cnt + byte + 1]){
+            for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+                select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+                select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+                for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
                 
-                case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
-                for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
-                for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
-                //Don't break yet as need to move the count ahead
-                
-                case FRAME_PADDING_SENTINEL:
-                cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
-                goto loop_start; //Can't break out of nested loop.
-                
-                default:
-                dataBuffer.push_back(
-                    ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
-                    ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
-                ); 
-                select_upper = select_upper >> 1;
-                select_lower += 1 << (5 - byte);
-            }
-            }
-            cnt += BYTES_PER_ROTATION;
+                    switch(packedData[cnt + byte + 1]){
+                        
+                        case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
+                        for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
+                        for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
+                        //Don't break yet as need to move the count ahead
+                        
+                        case FRAME_PADDING_SENTINEL:
+                        cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
+                        goto loop_start; //Can't break out of nested loop.
+                        
+                        default:
+                        dataBuffer.push_back(
+                            ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+                            ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                        ); 
+                        select_upper = select_upper >> 1;
+                        select_lower += 1 << (5 - byte);
+                    }
+                }
+                cnt += BYTES_PER_ROTATION;
         }
         //   Serial.print("Pushed back data...\n\r");
-        }
-        else {
-            // Serial.printf("[%d] ", cnt);
-            ++droppedBytes;
+        // }
+        // else {
+        //     // Serial.printf("[%d] ", cnt);
+        //     ++droppedBytes;
         }
     }
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
@@ -231,7 +231,7 @@ public:
         this -> dataPlane = dataPlane;
 
         this -> address = 255; //Max value (indicates that the node has not been assigned an address)
-    
+        this -> dataBufferWriteInProgress = false;
     }
 
     virtual void begin(){
@@ -363,6 +363,17 @@ public:
 
     deque<uint8_t> dataBuffer;
 
+    void declareActiveDataBufferReadWrite(){
+        dataBufferWriteInProgress = true;
+    }
+
+    void declareDataBufferSafeToAccess(){
+        dataBufferWriteInProgress = false;
+    }
+
+    bool checkForActiveDataBufferWrite(){
+        return dataBufferWriteInProgress;
+    }
 
 protected:
     
@@ -375,6 +386,8 @@ protected:
             this -> controlPlane -> write(packet.payload[i]);
         }
     }
+
+    bool dataBufferWriteInProgress;
 
     uint8_t address;
     uint32_t lastDataReceptionTime;
