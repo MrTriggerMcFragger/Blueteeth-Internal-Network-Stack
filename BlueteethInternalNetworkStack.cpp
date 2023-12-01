@@ -101,6 +101,7 @@ void uartFrameReceived(){
 
 
 void dataStreamReceived(){
+
     //Making variables static to try and save time on allocating memory on each function call
     static int newBytes;
     static int currentSize;
@@ -112,13 +113,16 @@ void dataStreamReceived(){
 
     // Serial.printf("UART task priority is %d\n\r", uxTaskPriorityGet(NULL));
 
+    while (xSemaphoreTake(internalNetworkStackPtr -> dataPlaneMutex, 1000) == pdFALSE){
+        //Continue
+    }
+    #ifdef MUTEX_TRACE
+    Serial.printf("[Data Plane] %s took the mutex\n\r", accessIdentifier.c_str());
+    #endif
+
     portENTER_CRITICAL(&mutex);
 
     internalNetworkStackPtr -> networkAccessingResources = true;
-
-    // if (internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
-    //     Serial.println("The serial buffer is full");
-    // }
     
     #ifdef TIME_STREAMING
     if (internalNetworkStackPtr -> dataBuffer.size() == 0) { 
@@ -151,20 +155,31 @@ void dataStreamReceived(){
     // }
 
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
-
-    while (xSemaphoreTake(internalNetworkStackPtr -> dataPlaneMutex, 1000) == pdFALSE){
-    }
     
+    #ifdef MUTEX_TRACE
+    Serial.printf("[Data Plane] %s releasing the mutex\n\r", accessIdentifier.c_str());
+    #endif
+    xSemaphoreGive(internalNetworkStackPtr -> dataPlaneMutex);
+
+    while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 10) == pdFALSE){
+        //Continue
+    }
+    #ifdef MUTEX_TRACE
+    Serial.printf("[Data Buffer] %s took the mutex\n\r", accessIdentifier.c_str());
+    #endif
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
     if(internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
+        #ifdef STREAM_TRACE
         Serial.printf("Flushing the serial buffer...\n\r");
+        #endif
         flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     }
-
-    // portEXIT_CRITICAL(&mutex); //exit critical to read data
-
-    xSemaphoreGive(internalNetworkStackPtr -> dataPlaneMutex);
+    
+    #ifdef MUTEX_TRACE
+    Serial.printf("[Data Buffer] %s releasing the mutex\n\r", accessIdentifier.c_str());
+    #endif
+    xSemaphoreGive(internalNetworkStackPtr -> dataBufferMutex);
 
     #ifdef TIME_STREAMING
     if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
@@ -176,7 +191,8 @@ void dataStreamReceived(){
 
     internalNetworkStackPtr -> networkAccessingResources = false;
 
-    // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
-    // Serial.printf("Received %d bytes\n\r", newBytes);
-    Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize) / 7 * 9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
+    #ifdef STREAM_TRACE
+    Serial.printf("Received %d bytes (attempted to read %d vs. the actual processing of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r",
+    newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize) / PAYLOAD_SIZE * FRAME_SIZE, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
+    #endif
 }
