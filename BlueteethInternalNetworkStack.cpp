@@ -148,7 +148,7 @@ void dataStreamReceived(){
 
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
     
-    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
+    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlaneMutex);
 
     // portEXIT_CRITICAL(&mutex); //exit critical to read data
 
@@ -166,9 +166,31 @@ void dataStreamReceived(){
 }
 
 void dataStreamErrorEncountered(hardwareSerial_error_t error){
-    if (error == UART_BUFFER_FULL_ERROR)
+    switch (error)
     {
-        internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
-        Serial.println("Buffer overflowed. Ressetting.");
+        case UART_BUFFER_FULL_ERROR:
+            // Serial.println("The data plane's serial buffer overflowed. Ressetting now...");
+            internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
+            break;
+
+        case UART_PARITY_ERROR:
+            // Serial.println("Data stream corruption detected at the serial level...");
+            break;
+
+        case UART_NO_ERROR:
+            break;
+
+        case UART_BREAK_ERROR:
+            break;
+
+        case UART_FIFO_OVF_ERROR:
+            break;
+
+        case UART_FRAME_ERROR:
+            break;
+
+
+        // default:
+        //     Serial.println("The data plane experienced an error that was unhandled.");
     }
 }

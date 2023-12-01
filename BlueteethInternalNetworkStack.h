@@ -100,16 +100,13 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @len - The length of the packed data.
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
-void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
+void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer, SemaphoreHandle_t dataBufferMutex){
     uint8_t select_lower;
     uint8_t select_upper;
     vector<uint8_t> payload;
-    vector<uint8_t> frame;
-
-    static portMUX_TYPE spinLock = portMUX_INITIALIZER_UNLOCKED;
 
     int cnt = 0;
-    
+
 
     loop_start:
     // const auto isDataCorrupted = [dataBuffer](int cnt, int byte) -> bool {
@@ -119,23 +116,17 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
     while (cnt < totalFrameLength){
 
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
-            
-            payload.resize(0);
-
             for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
                 select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
                     switch(packedData[cnt + byte + 1]){
-                        
-                        case FRAME_PADDING_SENTINEL:
-                          cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
-                          goto data_insertion;
 
+                        case FRAME_PADDING_SENTINEL:
                         case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
                           cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
                           goto loop_start;
-                        
+
                         default:
                             payload.push_back(
                                 ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
@@ -149,16 +140,17 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
             }
 
             if (payload.size() != PAYLOAD_SIZE){
-                Serial.print("Something went wrong with the unpack algorithm\n\r");
+                // Serial.print("Something went wrong with the unpack algorithm\n\r");
             }
 
-    data_insertion:
-            //We may lose bytes due to this
-            // vPortEnterCritical(&spinLock);
-            dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
-            // vPortExitCritical(&spinLock);
         }
-    }
+
+  }
+
+  xSemaphoreTake(dataBufferMutex, portMAX_DELAY);  
+  dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
+  xSemaphoreGive(dataBufferMutex);
+  
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
 
