@@ -110,10 +110,6 @@ void dataStreamReceived(){
     static const std::string accessIdentifier = "DATA PLANE";
     static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
 
-    // Serial.printf("UART task priority is %d\n\r", uxTaskPriorityGet(NULL));
-
-    portENTER_CRITICAL(&mutex);
-
     internalNetworkStackPtr -> networkAccessingResources = true;
 
     // if (internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
@@ -131,13 +127,13 @@ void dataStreamReceived(){
 
     if (currentSize + (newBytes / FRAME_SIZE * PAYLOAD_SIZE) > MAX_DATA_BUFFER_SIZE){
         // Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
-        newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
+        newBytes = (MAX_DATA_BUFFER_SIZE - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
         // Serial.printf(" Now my expected size is %d bytes.", newBytes);
     }
     
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
 
-    portEXIT_CRITICAL(&mutex); //exit critical to read data
+    // portEXIT_CRITICAL(&mutex); //exit critical to read data
 
     // if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
     //     static bool token = false;
@@ -151,20 +147,11 @@ void dataStreamReceived(){
     // }
 
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
-
-    while (xSemaphoreTake(internalNetworkStackPtr -> dataPlaneMutex, 1000) == pdFALSE){
-    }
     
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
-    if(internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
-        Serial.printf("Flushing the serial buffer...\n\r");
-        flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
-    }
-
     // portEXIT_CRITICAL(&mutex); //exit critical to read data
 
-    xSemaphoreGive(internalNetworkStackPtr -> dataPlaneMutex);
 
     #ifdef TIME_STREAMING
     if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
@@ -176,7 +163,12 @@ void dataStreamReceived(){
 
     internalNetworkStackPtr -> networkAccessingResources = false;
 
-    // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
-    // Serial.printf("Received %d bytes\n\r", newBytes);
-    Serial.printf("Received %d bytes (attempted to read %d vs. expectation of %d). There were %d bytes and now there's %d bytes in the queue (delta = %d). There are %d bytes left in the buffer.\n\r", newBytes, bytesReady,(internalNetworkStackPtr -> dataBuffer.size() - currentSize) / 7 * 9, currentSize, internalNetworkStackPtr -> dataBuffer.size(), internalNetworkStackPtr -> dataBuffer.size() - currentSize, internalNetworkStackPtr -> dataPlane -> available()); //DEBUG STATEMENT
+}
+
+void dataStreamErrorEncountered(hardwareSerial_error_t error){
+    if (error == UART_BUFFER_FULL_ERROR)
+    {
+        internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
+        Serial.println("Buffer overflowed. Ressetting.");
+    }
 }

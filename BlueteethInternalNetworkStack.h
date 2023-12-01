@@ -8,6 +8,7 @@
 #include <string>
 #include <set>
 #include <deque>
+#include <vector>
 
 #define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
 // #define DIRECT_TRANSFER //If defined, BT data streaming is direct from the UART buffer
@@ -48,6 +49,8 @@ void uartFrameReceived();
 *
 */
 void dataStreamReceived();
+
+void dataStreamErrorEncountered(hardwareSerial_error_t error);
 
 /* Packages data into BlueTeeth Data Stream frames
 *
@@ -100,49 +103,60 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
     uint8_t select_lower;
     uint8_t select_upper;
+    vector<uint8_t> payload;
+    vector<uint8_t> frame;
 
-    // cout << "Length is " << totalFrameLength << endl;
-    int droppedBytes = 0;
+    static portMUX_TYPE spinLock = portMUX_INITIALIZER_UNLOCKED;
+
     int cnt = 0;
-    //Circle through all of the data in the stream
+    
 
     loop_start:
+    // const auto isDataCorrupted = [dataBuffer](int cnt, int byte) -> bool {
+    //     return dataBuffer.size() < (cnt + byte + 1) ? true : false;
+    // }; //Check to make sure the size of the buffer didn't change between operations.
+
     while (cnt < totalFrameLength){
 
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+            
+            payload.resize(0);
 
             for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
                 select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-                
                     switch(packedData[cnt + byte + 1]){
                         
-                        case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
-                        for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
-                        for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
-                        //Don't break yet as need to move the count ahead
-                        
                         case FRAME_PADDING_SENTINEL:
-                        cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
-                        goto loop_start; //Can't break out of nested loop.
+                          cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
+                          goto data_insertion;
+
+                        case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
+                          cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
+                          goto loop_start;
                         
                         default:
-                        dataBuffer.push_back(
-                            ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
-                            ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
-                        ); 
-                        select_upper = select_upper >> 1;
-                        select_lower += 1 << (5 - byte);
+                            payload.push_back(
+                                ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+                                ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                            ); 
+                            select_upper = select_upper >> 1;
+                            select_lower += 1 << (5 - byte);
                     }
                 }
                 cnt += BYTES_PER_ROTATION;
-        }
-        //   Serial.print("Pushed back data...\n\r");
-        // }
-        // else {
-        //     // Serial.printf("[%d] ", cnt);
-        //     ++droppedBytes;
+            }
+
+            if (payload.size() != PAYLOAD_SIZE){
+                Serial.print("Something went wrong with the unpack algorithm\n\r");
+            }
+
+    data_insertion:
+            //We may lose bytes due to this
+            // vPortEnterCritical(&spinLock);
+            dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
+            // vPortExitCritical(&spinLock);
         }
     }
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
@@ -240,6 +254,7 @@ public:
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
         this -> dataPlane -> onReceive(dataStreamReceived);
+        this -> dataPlane -> onReceiveError(dataStreamErrorEncountered); //Ran into an error
         this -> dataPlaneMutex = xSemaphoreCreateMutex();
     }
     
