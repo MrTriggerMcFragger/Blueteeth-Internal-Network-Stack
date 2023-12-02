@@ -121,9 +121,17 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
                     switch(packedData[cnt + byte + 1]){
-
-                        case FRAME_PADDING_SENTINEL:
-                        case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
+                        case FRAME_START_SENTINEL:
+                          if (payload.size() > PAYLOAD_SIZE){
+                            payload.erase(payload.end() - payload.size()% PAYLOAD_SIZE , payload.end());
+                          }
+                          else{
+                            payload.erase(payload.begin(), payload.end());
+                          }
+                          cnt += byte + 1;; 
+                          goto loop_start;
+                      
+                        case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
                           cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
                           goto loop_start;
 
@@ -146,11 +154,16 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
         }
 
   }
-
-  xSemaphoreTake(dataBufferMutex, portMAX_DELAY);  
+  while (xSemaphoreTakeFromISR(dataBufferMutex, NULL) == pdFALSE){
+    // Serial.printf("Data plane was blocked...\n\r");
+    vPortYield();
+  }
+  Serial.printf("%s took the mutex\n\r", "DATA PLANE");
   dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
-  xSemaphoreGive(dataBufferMutex);
-  
+  Serial.printf("%s released the mutex\n\r", "DATA PLANE");
+  xSemaphoreGiveFromISR(dataBufferMutex, NULL);
+//   xSemaphoreGive(dataBufferMutex);
+
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
 

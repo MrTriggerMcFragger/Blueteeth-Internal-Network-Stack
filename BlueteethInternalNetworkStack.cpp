@@ -108,7 +108,6 @@ void dataStreamReceived(){
     static int bytesReady;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
     static const std::string accessIdentifier = "DATA PLANE";
-    static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
 
     internalNetworkStackPtr -> networkAccessingResources = true;
 
@@ -133,7 +132,6 @@ void dataStreamReceived(){
     
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
 
-    // portEXIT_CRITICAL(&mutex); //exit critical to read data
 
     // if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
     //     static bool token = false;
@@ -148,9 +146,19 @@ void dataStreamReceived(){
 
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
     
+    int before = internalNetworkStackPtr -> dataBuffer.size();
+    
+    int timestamp1 = millis();
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlaneMutex);
+    int timestamp2 = millis();
 
-    // portEXIT_CRITICAL(&mutex); //exit critical to read data
+    if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
+        Serial.println();
+        Serial.printf("Data Plane is reporting that the buffer went bad\n\r");
+        Serial.printf("Before sending [%d] I had %d bytes in my buffer, I read %d bytes, and now [%d] I have %d bytes in my buffer left\n\r", timestamp1, before, bytesReady, timestamp2, internalNetworkStackPtr -> dataBuffer.size());
+        Serial.println();
+    }
+    
 
 
     #ifdef TIME_STREAMING
