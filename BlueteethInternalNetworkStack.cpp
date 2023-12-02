@@ -109,8 +109,6 @@ void dataStreamReceived(){
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
     static const std::string accessIdentifier = "DATA PLANE";
 
-    internalNetworkStackPtr -> networkAccessingResources = true;
-
     // if (internalNetworkStackPtr -> dataPlane -> available() >= DATA_PLANE_SERIAL_RX_BUFFER_SIZE ){
     //     Serial.println("The serial buffer is full");
     // }
@@ -128,6 +126,7 @@ void dataStreamReceived(){
         // Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
         newBytes = (MAX_DATA_BUFFER_SIZE - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
         // Serial.printf(" Now my expected size is %d bytes.", newBytes);
+        flushToken = true;
     }
     
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
@@ -146,20 +145,11 @@ void dataStreamReceived(){
 
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
     
-    int before = internalNetworkStackPtr -> dataBuffer.size();
-    
-    int timestamp1 = millis();
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlaneMutex);
-    int timestamp2 = millis();
 
-    if ((internalNetworkStackPtr -> dataBuffer.size() % 4) != 0){
-        Serial.println();
-        Serial.printf("Data Plane is reporting that the buffer went bad\n\r");
-        Serial.printf("Before sending [%d] I had %d bytes in my buffer, I read %d bytes, and now [%d] I have %d bytes in my buffer left\n\r", timestamp1, before, bytesReady, timestamp2, internalNetworkStackPtr -> dataBuffer.size());
-        Serial.println();
+    if (flushToken == true){
+        internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
     }
-    
-
 
     #ifdef TIME_STREAMING
     if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
@@ -168,8 +158,6 @@ void dataStreamReceived(){
     #endif
     
     internalNetworkStackPtr -> recordDataBufferAccessTime();
-
-    internalNetworkStackPtr -> networkAccessingResources = false;
 
 }
 

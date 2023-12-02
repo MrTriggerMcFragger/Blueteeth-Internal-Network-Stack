@@ -103,14 +103,20 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer, SemaphoreHandle_t & dataBufferMutex){
     uint8_t select_lower;
     uint8_t select_upper;
-    vector<uint8_t> payload;
 
     int cnt = 0;
 
+    // while (xSemaphoreTake(dataBufferMutex, 1000) == pdFALSE){
+    //     // Serial.printf("Data plane was blocked...\n\r");
+    //     vPortYield();
+    // }
+    //   Serial.printf("%s took the mutex\n\r", "DATA PLANE");
+    
+    size_t before = dataBuffer.size();
 
     // Serial.printf("Starting %d\n\r", dataBuffer.size());
 
-    loop_start:
+loop_start:
     // const auto isDataCorrupted = [dataBuffer](int cnt, int byte) -> bool {
     //     return dataBuffer.size() < (cnt + byte + 1) ? true : false;
     // }; //Check to make sure the size of the buffer didn't change between operations.
@@ -124,11 +130,11 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
                     switch(packedData[cnt + byte + 1]){
                         case FRAME_START_SENTINEL:
-                          if (payload.size() > PAYLOAD_SIZE){
-                            payload.erase(payload.end() - payload.size()% PAYLOAD_SIZE , payload.end());
+                          if (dataBuffer.size() > PAYLOAD_SIZE){
+                            dataBuffer.erase(dataBuffer.end() - dataBuffer.size()% PAYLOAD_SIZE , dataBuffer.end());
                           }
                           else{
-                            payload.erase(payload.begin(), payload.end());
+                            dataBuffer.erase(dataBuffer.begin(), dataBuffer.end());
                           }
                           cnt += byte + 1;; 
                           goto loop_start;
@@ -138,7 +144,7 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
                           goto loop_start;
 
                         default:
-                            payload.push_back(
+                            dataBuffer.push_back(
                                 ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
                                 ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
                             ); 
@@ -152,18 +158,21 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
         }
 
   }
-//   while (xSemaphoreTakeFromISR(dataBufferMutex, NULL) == pdFALSE)
-  while (xSemaphoreTake(dataBufferMutex, 1000) == pdFALSE){
-    // Serial.printf("Data plane was blocked...\n\r");
-    // vPortYield();
-  }
-//   Serial.printf("%s took the mutex\n\r", "DATA PLANE");
-  dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
-//   Serial.printf("%s released the mutex\n\r", "DATA PLANE");
-//   xSemaphoreGiveFromISR(dataBufferMutex, NULL);
-  xSemaphoreGive(dataBufferMutex);
 
-    //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
+//   if ((dataBuffer.size() % 4) != 0){
+//         Serial.println();
+//         Serial.printf("Data Plane is reporting that the buffer went bad\n\r");
+//         Serial.printf("Before sending I had %d bytes in my buffer, I read %d bytes, and now I have %d bytes in my buffer left\n\r", before, totalFrameLength, dataBuffer.size());
+//         Serial.println();
+        
+//         // dataBuffer.resize(0);
+//         // internalNetworkStack.flushDataPlaneSerialBuffer();
+//     }
+
+//   Serial.printf("%s released the mutex\n\r", "DATA PLANE");
+ //   xSemaphoreGiveFromISR(dataBufferMutex, NULL);
+//   xSemaphoreGive(dataBufferMutex);
+
 }
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
