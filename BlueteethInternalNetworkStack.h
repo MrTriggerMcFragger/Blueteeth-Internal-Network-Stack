@@ -100,13 +100,15 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @len - The length of the packed data.
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
-void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer, SemaphoreHandle_t dataBufferMutex){
+void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer, SemaphoreHandle_t & dataBufferMutex){
     uint8_t select_lower;
     uint8_t select_upper;
     vector<uint8_t> payload;
 
     int cnt = 0;
 
+
+    // Serial.printf("Starting %d\n\r", dataBuffer.size());
 
     loop_start:
     // const auto isDataCorrupted = [dataBuffer](int cnt, int byte) -> bool {
@@ -147,22 +149,19 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
                 cnt += BYTES_PER_ROTATION;
             }
 
-            if (payload.size() != PAYLOAD_SIZE){
-                // Serial.print("Something went wrong with the unpack algorithm\n\r");
-            }
-
         }
 
   }
-  while (xSemaphoreTakeFromISR(dataBufferMutex, NULL) == pdFALSE){
+//   while (xSemaphoreTakeFromISR(dataBufferMutex, NULL) == pdFALSE)
+  while (xSemaphoreTake(dataBufferMutex, 1000) == pdFALSE){
     // Serial.printf("Data plane was blocked...\n\r");
-    vPortYield();
+    // vPortYield();
   }
-  Serial.printf("%s took the mutex\n\r", "DATA PLANE");
+//   Serial.printf("%s took the mutex\n\r", "DATA PLANE");
   dataBuffer.insert(dataBuffer.end(), payload.begin(), payload.end());
-  Serial.printf("%s released the mutex\n\r", "DATA PLANE");
-  xSemaphoreGiveFromISR(dataBufferMutex, NULL);
-//   xSemaphoreGive(dataBufferMutex);
+//   Serial.printf("%s released the mutex\n\r", "DATA PLANE");
+//   xSemaphoreGiveFromISR(dataBufferMutex, NULL);
+  xSemaphoreGive(dataBufferMutex);
 
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }

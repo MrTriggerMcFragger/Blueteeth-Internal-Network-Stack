@@ -189,6 +189,7 @@ void dataStreamErrorEncountered(hardwareSerial_error_t error){
             break;
 
         case UART_BREAK_ERROR:
+            
             break;
 
         case UART_FIFO_OVF_ERROR:
