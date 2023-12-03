@@ -8,6 +8,7 @@
 #include <string>
 #include <set>
 #include <deque>
+#include <vector>
 
 #define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
 
@@ -97,38 +98,45 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
     uint8_t select_lower;
     uint8_t select_upper;
+    vector<uint8_t> framePayload;  
+    // deque<uint8_t> dataCollection;
 
     int cnt = 0;
 
 loop_start:
 
-    while (cnt < totalFrameLength){
+    while (cnt < totalFrameLength ){
 
+        framePayload.clear();
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+            if (cnt >=totalFrameLength){
+                Serial.println("Conspiracy theory confirmed");
+                return;
+            }
             for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
                 select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+                    if (cnt >= totalFrameLength){
+                        Serial.println("bug found!");
+                        return;
+                    }
                     switch(packedData[cnt + byte + 1]){
                         case FRAME_START_SENTINEL:
-                          if (dataBuffer.size() > PAYLOAD_SIZE){
-                            dataBuffer.erase(dataBuffer.end() - dataBuffer.size()% PAYLOAD_SIZE , dataBuffer.end());
-                          }
-                          else{
-                            dataBuffer.erase(dataBuffer.begin(), dataBuffer.end());
-                          }
-                          cnt += byte + 1;; 
+                          //CORRUPTION OCCURRED
+                          cnt += byte + 1;
                           goto loop_start;
                       
                         case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
                           cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
-                          goto loop_start;
+                          goto loop_end;
 
                         default:
                             // if (packedData[cnt + byte] > 0b10000000){
                             //     Serial.print("A bad byte was detected in a frame...\n\r");
                             // }
-                            dataBuffer.push_back(
+
+                            framePayload.push_back(
                                 ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
                                 ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
                             ); 
@@ -140,8 +148,19 @@ loop_start:
             }
 
         }
+
+loop_end:
+    if (framePayload.size() > 28){
+        Serial.println("Corruption detected");
+    }
+    dataBuffer.insert(dataBuffer.end(), framePayload.begin(), framePayload.end());
+    // dataBuffer.insert(dataCollection.end(), framePayload.begin(), framePayload.end());
+
   }
-    //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
+
+//   if ( ( dataCollection.size() / PAYLOAD_SIZE * FRAME_SIZE ) > totalFrameLength ) Serial.printf("The data collection size is %d (cnt = %d)\n\r", dataCollection.size(), cnt);
+
+
 }
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.

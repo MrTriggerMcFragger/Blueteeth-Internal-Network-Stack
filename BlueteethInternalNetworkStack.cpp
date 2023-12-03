@@ -152,7 +152,7 @@ void dataStreamReceived(){
 
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
-    bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize)/PAYLOAD_SIZE*FRAME_SIZE;
+    bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
     if (bytesProcessed != bytesReady){
         Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
     }
