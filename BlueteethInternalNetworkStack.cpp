@@ -99,6 +99,7 @@ void uartFrameReceived(){
     }
 }
 
+extern bool naughtyFlag;
 
 void dataStreamReceived(){
     //Making variables static to try and save time on allocating memory on each function call
@@ -119,45 +120,62 @@ void dataStreamReceived(){
     }
     #endif
 
-    newBytes = internalNetworkStackPtr -> dataPlane -> available();
-    currentSize = internalNetworkStackPtr -> dataBuffer.size();
+    
+    vTaskPrioritySet(NULL, 19); //Lower priority to that of the A2DP callback
 
-    if (currentSize + (newBytes / FRAME_SIZE * PAYLOAD_SIZE) > MAX_DATA_BUFFER_SIZE){
-        // Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
-        newBytes = (MAX_DATA_BUFFER_SIZE - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
-        // Serial.printf(" Now my expected size is %d bytes.", newBytes);
-        flushToken = true;
+    if (internalNetworkStackPtr -> networkAccessingResources == true){
+        Serial.print("Theory confirmed...\n\r");
+        return;
+    }
+    internalNetworkStackPtr -> networkAccessingResources = true;
+
+    while (internalNetworkStackPtr -> getDataPlaneBytesAvailable() > 0) {
+        
+        if (internalNetworkStackPtr -> getDataPlaneBytesAvailable() < FRAME_SIZE) internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
+
+        while (xSemaphoreTake(internalNetworkStackPtr -> dataPlaneMutex, 0) == pdFALSE){
+            // Serial.printf("Data plane can yield %d", xPortCanYield());
+            // vTaskPrioritySet(NULL, 19);
+            // Serial.printf("Task priority is now %d", uxTaskPriorityGet(NULL));
+            // vTaskDelay(10);
+            vPortYield();
+        }
+
+        naughtyFlag = true;
+
+        newBytes = internalNetworkStackPtr -> dataPlane -> available();
+        currentSize = internalNetworkStackPtr -> dataBuffer.size();
+
+        if (currentSize + (newBytes / FRAME_SIZE * PAYLOAD_SIZE) > MAX_DATA_BUFFER_SIZE){
+            // Serial.printf("Reducing size. I'm expecting %d bytes and I have %d bytes.", newBytes, currentSize);
+            newBytes = (MAX_DATA_BUFFER_SIZE - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
+            // Serial.printf(" Now my expected size is %d bytes.", newBytes);
+            flushToken = true;
+        }
+        bytesReady = newBytes - (newBytes % FRAME_SIZE);
+
+        internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
+        
+        auto before = internalNetworkStackPtr->dataBuffer.size();
+
+        unpackDataStreamOld(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
+
+        // if (internalNetworkStackPtr->dataBuffer.size() != currentSize + (bytesReady / FRAME_SIZE * PAYLOAD_SIZE)){
+        //     Serial.printf("Something may have gone wrong. The naguhty flag is set to %d. I had %d bytes before. I have %d bytes now. I tried to read %d bytes.\n\r", naughtyFlag, currentSize, internalNetworkStackPtr->dataBuffer.size(), newBytes);
+        // }
+        
+        xSemaphoreGive(internalNetworkStackPtr -> dataPlaneMutex);
+
+        #ifdef TIME_STREAMING
+        if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
+            streamTime = millis() - streamTime;
+        } 
+        #endif
+
     }
     
-    bytesReady = newBytes - (newBytes % FRAME_SIZE);
+    internalNetworkStackPtr -> networkAccessingResources = false;
 
-
-    // if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
-    //     static bool token = false;
-    //     if (token == false){
-    //         Serial.printf("Forcing fast recovery.\n\r");
-    //         if ((bytesReady - FRAME_SIZE) > 0){
-    //             bytesReady -= FRAME_SIZE;
-    //         }
-    //     }
-    //     token = true;
-    // }
-
-    internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
-    
-    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlaneMutex);
-
-    if (flushToken == true){
-        internalNetworkStackPtr -> flushDataPlaneSerialBuffer();
-    }
-
-    #ifdef TIME_STREAMING
-    if (internalNetworkStackPtr -> dataBuffer.size() >= DATA_STREAM_TEST_SIZE){ //DEBUG STATEMENT
-        streamTime = millis() - streamTime;
-    } 
-    #endif
-    
-    internalNetworkStackPtr -> recordDataBufferAccessTime();
 
 }
 

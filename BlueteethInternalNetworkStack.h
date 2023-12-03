@@ -10,8 +10,7 @@
 #include <deque>
 #include <vector>
 
-#define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
-// #define DIRECT_TRANSFER //If defined, BT data streaming is direct from the UART buffer
+// #define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
 
 using namespace std;
 
@@ -21,13 +20,13 @@ using namespace std;
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (40320)
+#define MAX_DATA_BUFFER_SIZE (80640) //80640
 
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING) 3840000 (STABLE)
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1056) //Make an integer multiple of the frame size
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4125) //Make an integer multiple of the frame size
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (16500) //Make an integer multiple of the frame size (8250 is woking)
 
 //Macros for framing
 #define FRAME_START_SENTINEL (0b11111111)
@@ -93,6 +92,47 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
     }
 }
 
+void inline unpackDataStreamOld(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
+    static uint8_t select_lower;
+    static uint8_t select_upper;
+    static int cnt;
+
+    cnt = 0;
+    loop_start:
+    while (cnt < totalFrameLength){
+
+            if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+
+                for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+                    select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+                    select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+                    for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+                    
+                        switch(packedData[cnt + byte + 1]){
+                            
+                            case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
+                            for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
+                            for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
+                            //Don't break yet as need to move the count ahead
+                            
+                            case FRAME_PADDING_SENTINEL:
+                            cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
+                            goto loop_start; //Can't break out of nested loop.
+                            
+                            default:
+                            dataBuffer.push_back(
+                                ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+                                ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                            ); 
+                            select_upper = select_upper >> 1;
+                            select_lower += 1 << (5 - byte);
+                        }
+                    }
+                    cnt += BYTES_PER_ROTATION;
+            }
+        }
+    }
+}
 
 /* Unpacks data from BlueTeeth data stream frames into buffer
 *
@@ -100,26 +140,13 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @len - The length of the packed data.
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
-void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer, SemaphoreHandle_t & dataBufferMutex){
+void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
     uint8_t select_lower;
     uint8_t select_upper;
 
     int cnt = 0;
 
-    // while (xSemaphoreTake(dataBufferMutex, 1000) == pdFALSE){
-    //     // Serial.printf("Data plane was blocked...\n\r");
-    //     vPortYield();
-    // }
-    //   Serial.printf("%s took the mutex\n\r", "DATA PLANE");
-    
-    size_t before = dataBuffer.size();
-
-    // Serial.printf("Starting %d\n\r", dataBuffer.size());
-
 loop_start:
-    // const auto isDataCorrupted = [dataBuffer](int cnt, int byte) -> bool {
-    //     return dataBuffer.size() < (cnt + byte + 1) ? true : false;
-    // }; //Check to make sure the size of the buffer didn't change between operations.
 
     while (cnt < totalFrameLength){
 
@@ -158,20 +185,6 @@ loop_start:
         }
 
   }
-
-//   if ((dataBuffer.size() % 4) != 0){
-//         Serial.println();
-//         Serial.printf("Data Plane is reporting that the buffer went bad\n\r");
-//         Serial.printf("Before sending I had %d bytes in my buffer, I read %d bytes, and now I have %d bytes in my buffer left\n\r", before, totalFrameLength, dataBuffer.size());
-//         Serial.println();
-        
-//         // dataBuffer.resize(0);
-//         // internalNetworkStack.flushDataPlaneSerialBuffer();
-//     }
-
-//   Serial.printf("%s released the mutex\n\r", "DATA PLANE");
- //   xSemaphoreGiveFromISR(dataBufferMutex, NULL);
-//   xSemaphoreGive(dataBufferMutex);
 
 }
 
@@ -267,8 +280,11 @@ public:
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
         this -> dataPlane -> onReceive(dataStreamReceived);
-        this -> dataPlane -> onReceiveError(dataStreamErrorEncountered); //Ran into an error
+        // this -> dataPlane -> onReceiveError(dataStreamErrorEncountered); //Ran into an error
         this -> dataPlaneMutex = xSemaphoreCreateMutex();
+
+        this -> networkAccessingResources = false;
+        this -> dataBufferWriteInProgress = false;
     }
     
     /* Queues a packet to be sent to the rest of the network upon receiving a token
