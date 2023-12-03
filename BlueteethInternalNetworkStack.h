@@ -99,7 +99,8 @@ void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<u
     uint8_t select_lower;
     uint8_t select_upper;
     vector<uint8_t> framePayload;  
-    // deque<uint8_t> dataCollection;
+
+    auto before = dataBuffer.size();
 
     int cnt = 0;
 
@@ -108,28 +109,39 @@ loop_start:
     while (cnt < totalFrameLength ){
 
         framePayload.clear();
+
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+
             if (cnt >=totalFrameLength){
                 Serial.println("Conspiracy theory confirmed");
                 return;
             }
-            for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+
+            for (volatile int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
                 select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+
+                if (rotation > 4){
+                    Serial.println("Fucking compiler shit brother");
+                }
+                
                 for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-                    if (cnt >= totalFrameLength){
-                        Serial.println("bug found!");
-                        return;
+                    
+                    if (rotation > 4){
+                        Serial.println("Fucking compiler shit brother");
                     }
+                    if ((cnt + byte) >= totalFrameLength){
+                        Serial.printf("%d -> byte = %d, rotation = %d\n\r", cnt, byte, rotation);
+                        return; //Corruption occurred
+                    }
+
                     switch(packedData[cnt + byte + 1]){
                         case FRAME_START_SENTINEL:
                           //CORRUPTION OCCURRED
-                          cnt += byte + 1;
                           goto loop_start;
                       
                         case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
-                          cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
-                          goto loop_end;
+                          goto loop_start; //Don't bother correcting until the problem is solved
 
                         default:
                             // if (packedData[cnt + byte] > 0b10000000){
@@ -150,23 +162,37 @@ loop_start:
         }
 
 loop_end:
-    if (framePayload.size() > 28){
+
+    if ((framePayload.size() % 4) != 0){
         Serial.println("Corruption detected");
+
+        while (((framePayload.size() % 4)) != 0){
+            framePayload.pop_back();
+        }
     }
     dataBuffer.insert(dataBuffer.end(), framePayload.begin(), framePayload.end());
-    // dataBuffer.insert(dataCollection.end(), framePayload.begin(), framePayload.end());
 
   }
 
-//   if ( ( dataCollection.size() / PAYLOAD_SIZE * FRAME_SIZE ) > totalFrameLength ) Serial.printf("The data collection size is %d (cnt = %d)\n\r", dataCollection.size(), cnt);
+  return;
 
+correction:
+
+  size_t bytesAdded = (dataBuffer.size() - before); 
+
+  if (bytesAdded > (totalFrameLength / FRAME_SIZE * PAYLOAD_SIZE)){
+    Serial.printf("Bad data length added (%d after adding %d)", dataBuffer.size(), bytesAdded);
+  }
+
+  dataBuffer.erase(dataBuffer.end() - bytesAdded, dataBuffer.end());
+  Serial.printf("Attempting to correct (now %d bytes)...\n\r", dataBuffer.size());
 
 }
 
 /* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
 *
 */
-void inline flushSerialBuffer(HardwareSerial * serial);
+void flushSerialBuffer(HardwareSerial * serial);
 
 
 class BlueteethPacket {

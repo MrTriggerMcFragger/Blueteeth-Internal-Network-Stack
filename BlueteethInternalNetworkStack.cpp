@@ -133,7 +133,7 @@ void dataStreamReceived(){
     if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
         newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
         flushToken = true;
-        // Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
+        Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
     }
     
     static int bytesReady;
@@ -153,9 +153,9 @@ void dataStreamReceived(){
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
 
     bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
-    if (bytesProcessed != bytesReady){
-        Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
-    }
+    // if (bytesProcessed != bytesReady){
+    //     Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
+    // }
 
     if(flushToken){
         Serial.printf("Flushing the serial buffer...\n\r");
