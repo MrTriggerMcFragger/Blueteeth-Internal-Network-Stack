@@ -113,7 +113,7 @@ loop_start:
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
 
             if (cnt >=totalFrameLength){
-                Serial.println("Conspiracy theory confirmed");
+                //Will occur if the last byte received was a FRAME_START_SENTINEL
                 return;
             }
 
