@@ -108,6 +108,7 @@ void dataStreamReceived(){
     
     while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 0) == pdFALSE){
         //Do nothing
+        // Serial.print("DATA PLANE Yielding...\n\r");
         vTaskPrioritySet(NULL, 19); //reduce to A2DP priority in order to yield to it
         vPortYield();
     }
@@ -132,6 +133,7 @@ void dataStreamReceived(){
     static int bytesReady;
     static int bytesProcessed; //DEBUG VARIABLE
     bytesReady = newBytes - (newBytes % FRAME_SIZE);
+
     internalNetworkStackPtr -> dataPlane -> readBytes(tmp, bytesReady);
     // for (int pos = 0; pos < bytesReady; pos += FRAME_SIZE){
     //     if (tmp[pos] != FRAME_START_SENTINEL){

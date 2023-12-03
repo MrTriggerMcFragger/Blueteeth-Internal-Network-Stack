@@ -19,12 +19,12 @@ using namespace std;
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (42000)
+#define MAX_DATA_BUFFER_SIZE (80640)
 #define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4125) //1024
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224) //1024
 
 //Macros for framing
 #define FRAME_START_SENTINEL (0b11111111)
@@ -95,7 +95,7 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
 void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
-        uint8_t select_lower;
+    uint8_t select_lower;
     uint8_t select_upper;
 
     int cnt = 0;
