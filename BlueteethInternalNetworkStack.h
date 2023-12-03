@@ -125,6 +125,9 @@ loop_start:
                           goto loop_start;
 
                         default:
+                            // if (packedData[cnt + byte] > 0b10000000){
+                            //     Serial.print("A bad byte was detected in a frame...\n\r");
+                            // }
                             dataBuffer.push_back(
                                 ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
                                 ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))

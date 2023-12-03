@@ -114,6 +114,12 @@ void dataStreamReceived(){
     }
     vTaskPrioritySet(NULL, 24); //go back to highest priority after yielding.
 
+
+    if ( (internalNetworkStackPtr -> dataBuffer.size() % 4 ) != 0 ){
+        Serial.print("Something went wrong...\n\r");
+        internalNetworkStackPtr -> dataBuffer.clear();
+    }
+
     newBytes = internalNetworkStackPtr -> dataPlane -> available();
     currentSize = internalNetworkStackPtr -> dataBuffer.size();
     
