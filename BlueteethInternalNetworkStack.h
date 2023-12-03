@@ -10,7 +10,6 @@
 #include <deque>
 
 #define TIME_STREAMING //If defined, time is measured for test streams (will decrease performance)
-// #define DIRECT_TRANSFER //If defined, BT data streaming is direct from the UART buffer
 
 using namespace std;
 
@@ -25,12 +24,7 @@ using namespace std;
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-
-#ifdef DIRECT_TRANSFER
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (40000)
-#else
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4096) //1024
-#endif
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4125) //1024
 
 //Macros for framing
 #define FRAME_START_SENTINEL (0b11111111)
