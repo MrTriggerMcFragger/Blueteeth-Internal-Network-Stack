@@ -101,53 +101,49 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
 void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
-    uint8_t select_lower;
+        uint8_t select_lower;
     uint8_t select_upper;
 
-    // cout << "Length is " << totalFrameLength << endl;
-    int droppedBytes = 0;
     int cnt = 0;
-    //Circle through all of the data in the stream
 
-    loop_start:
+loop_start:
+
     while (cnt < totalFrameLength){
 
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+            for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+                select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+                select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+                for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+                    switch(packedData[cnt + byte + 1]){
+                        case FRAME_START_SENTINEL:
+                          if (dataBuffer.size() > PAYLOAD_SIZE){
+                            dataBuffer.erase(dataBuffer.end() - dataBuffer.size()% PAYLOAD_SIZE , dataBuffer.end());
+                          }
+                          else{
+                            dataBuffer.erase(dataBuffer.begin(), dataBuffer.end());
+                          }
+                          cnt += byte + 1;; 
+                          goto loop_start;
+                      
+                        case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
+                          cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; 
+                          goto loop_start;
 
-        for (int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
-            select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
-            select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
-            for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-            
-            switch(packedData[cnt + byte + 1]){
-                
-                case FRAME_START_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.
-                for (int popCnt = 0; popCnt < byte; ++popCnt) dataBuffer.pop_back(); //Remove all of the corrupted data in rotation (previous bytes + the one thats partially filled)
-                for (int popCnt = 0; popCnt < (rotation * (BYTES_PER_ROTATION - 1)); ++popCnt) dataBuffer.pop_back(); 
-                //Don't break yet as need to move the count ahead
-                
-                case FRAME_PADDING_SENTINEL:
-                cnt += (ROTATIONS_PER_FRAME - rotation) * BYTES_PER_ROTATION; //Skip bytes in unused rotations   
-                goto loop_start; //Can't break out of nested loop.
-                
-                default:
-                dataBuffer.push_back(
-                    ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
-                    ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
-                ); 
-                select_upper = select_upper >> 1;
-                select_lower += 1 << (5 - byte);
+                        default:
+                            dataBuffer.push_back(
+                                ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
+                                ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                            ); 
+                            select_upper = select_upper >> 1;
+                            select_lower += 1 << (5 - byte);
+                    }
+                }
+                cnt += BYTES_PER_ROTATION;
             }
-            }
-            cnt += BYTES_PER_ROTATION;
+
         }
-        //   Serial.print("Pushed back data...\n\r");
-        }
-        else {
-            // Serial.printf("[%d] ", cnt);
-            ++droppedBytes;
-        }
-    }
+  }
     //   if (droppedBytes > 0) Serial.printf(" Threw away %d bytes out of %d...\n\r", droppedBytes, len);
 }
 
