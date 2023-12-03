@@ -147,9 +147,15 @@ void dataStreamReceived(){
     //     }
     //     // Serial.printf("%u ", tmp[pos]);
     // }
-    bytesProcessed += bytesReady;
-    // Serial.println();
+    // bytesProcessed += bytesReady;
+
+
     unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
+
+    bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize)/PAYLOAD_SIZE*FRAME_SIZE;
+    if (bytesProcessed != bytesReady){
+        Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
+    }
 
     if(flushToken){
         Serial.printf("Flushing the serial buffer...\n\r");
