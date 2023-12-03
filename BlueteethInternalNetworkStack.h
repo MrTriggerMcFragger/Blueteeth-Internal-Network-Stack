@@ -88,6 +88,7 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
     }
 }
 
+//Last 8 Bytes : 00xXX 0xXX 0xXX 0xFF 0x23 0x47 0x28 0x12 | 0xXX 0xXX 0xXX
 
 /* Unpacks data from BlueTeeth data stream frames into buffer
 *
@@ -95,43 +96,49 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @len - The length of the packed data.
 *  @dataBuffer - A double-ended queue containing the unpacked data.
 */
-void inline unpackDataStream(uint8_t * packedData, int totalFrameLength, deque<uint8_t> & dataBuffer){
+void inline unpackDataStream(const uint8_t * packedData, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane){
+    
     uint8_t select_lower;
     uint8_t select_upper;
     vector<uint8_t> framePayload;  
 
+    // static deque<uint8_t> leftOverData;
+
     auto before = dataBuffer.size();
 
-    int cnt = 0;
+    volatile int cnt = 0;
 
 loop_start:
 
-    while (cnt < totalFrameLength ){
+    while (cnt < dataStreamLength ){
 
         framePayload.clear();
 
         if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
 
-            if (cnt >=totalFrameLength){
+            if (cnt >= dataStreamLength) {
                 //Will occur if the last byte received was a FRAME_START_SENTINEL
                 return;
             }
 
-            for (volatile int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+            for (volatile int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ 
+                
                 select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
                 select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
 
-                if (rotation > 4){
+                if (rotation >= 4){
                     Serial.println("Fucking compiler shit brother");
                 }
                 
-                for(int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+                for(volatile int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
                     
-                    if (rotation > 4){
+                    if (rotation >= 4){
                         Serial.println("Fucking compiler shit brother");
                     }
-                    if ((cnt + byte) >= totalFrameLength){
-                        Serial.printf("%d -> byte = %d, rotation = %d\n\r", cnt, byte, rotation);
+
+                    if ((cnt + byte) >= dataStreamLength){
+                        Serial.printf("%d -> byte = %d, rotation = %d (dataBufferSize = %d, bytes available = %d)\n\r", cnt, byte, rotation, dataBuffer.size(), dataPlane -> available());
+                        // flushSerialBuffer(dataPlane);
                         return; //Corruption occurred
                     }
 
@@ -180,7 +187,7 @@ correction:
 
   size_t bytesAdded = (dataBuffer.size() - before); 
 
-  if (bytesAdded > (totalFrameLength / FRAME_SIZE * PAYLOAD_SIZE)){
+  if (bytesAdded > (dataStreamLength / FRAME_SIZE * PAYLOAD_SIZE)){
     Serial.printf("Bad data length added (%d after adding %d)", dataBuffer.size(), bytesAdded);
   }
 
@@ -278,6 +285,8 @@ public:
         this -> controlPlane -> onReceive(uartFrameReceived);
         //441600
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
+        this -> dataPlane -> setRxFIFOFull(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
+
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
         this -> dataPlane -> onReceive(dataStreamReceived);
         this -> dataBufferMutex = xSemaphoreCreateMutex();
@@ -308,6 +317,9 @@ public:
         return retrievedPacket;
 
     }
+    
+    //Serial baud rate -> 10 x BT Audio Data Rate
+    //BT Audio data rate 
 
     void flushDataPlaneSerialBuffer(){
         flushSerialBuffer(this -> dataPlane);

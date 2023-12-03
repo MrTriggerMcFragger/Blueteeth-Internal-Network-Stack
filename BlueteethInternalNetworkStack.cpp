@@ -104,7 +104,9 @@ void dataStreamReceived(){
     static bool flushToken;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
 
-
+    if (internalNetworkStackPtr -> getDataPlaneBytesAvailable() < 512){
+        return;
+    }
     
     while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 0) == pdFALSE){
         //Do nothing
@@ -120,7 +122,7 @@ void dataStreamReceived(){
         internalNetworkStackPtr -> dataBuffer.clear();
     }
 
-    newBytes = internalNetworkStackPtr -> dataPlane -> available();
+    newBytes = internalNetworkStackPtr -> dataPlane -> available(); //Amount available
     currentSize = internalNetworkStackPtr -> dataBuffer.size();
     
     #ifdef TIME_STREAMING
@@ -130,10 +132,10 @@ void dataStreamReceived(){
     #endif
     
     flushToken = false;
-    if ((currentSize + newBytes) > MAX_DATA_BUFFER_SIZE){
+    if ((currentSize + newBytes * PAYLOAD_SIZE / FRAME_SIZE) > MAX_DATA_BUFFER_SIZE){
         newBytes = MAX_DATA_BUFFER_SIZE - currentSize;
         flushToken = true;
-        Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
+        // Serial.printf("Buffer Full (%d bytes in buffer and adding %d bytes)\n\r", internalNetworkStackPtr->dataBuffer.size(), newBytes);
     }
     
     static int bytesReady;
@@ -150,12 +152,12 @@ void dataStreamReceived(){
     // bytesProcessed += bytesReady;
 
 
-    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer);
+    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlane);
 
     bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
-    // if (bytesProcessed != bytesReady){
-    //     Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
-    // }
+    if (bytesProcessed > bytesReady){
+        Serial.printf("There was %d amount of bytes lost (expected = %d, actual = %d))\n\r", bytesProcessed - bytesReady, bytesProcessed, bytesReady);
+    }
 
     if(flushToken){
         Serial.printf("Flushing the serial buffer...\n\r");
