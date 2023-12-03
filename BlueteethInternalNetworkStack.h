@@ -231,9 +231,8 @@ public:
         //441600
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19); //Need to use pins 18 & 19 as Serial1 defaults literally cannot be used (they're involved in flashing and will crash your program). Baud chosen to have 441600 byte/s rate (> 40k & a multiple of 9600).
-        #ifndef DIRECT_TRANSFER
         this -> dataPlane -> onReceive(dataStreamReceived);
-        #endif
+        this -> dataBufferMutex = xSemaphoreCreateMutex();
     }
     
     /* Queues a packet to be sent to the rest of the network upon receiving a token
@@ -352,7 +351,7 @@ public:
     }
 
     deque<uint8_t> dataBuffer;
-
+    SemaphoreHandle_t dataBufferMutex;
 
 protected:
     

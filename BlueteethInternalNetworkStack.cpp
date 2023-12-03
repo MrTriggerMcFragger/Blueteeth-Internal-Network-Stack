@@ -104,9 +104,14 @@ void dataStreamReceived(){
     static bool flushToken;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
 
-    if (internalNetworkStackPtr -> dataPlane -> available() >= (DATA_PLANE_SERIAL_RX_BUFFER_SIZE - 1) ){
-        Serial.println("The serial buffer is full");
+
+    
+    while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 0) == pdFALSE){
+        //Do nothing
+        vTaskPrioritySet(NULL, 19); //reduce to A2DP priority in order to yield to it
+        vPortYield();
     }
+    vTaskPrioritySet(NULL, 24); //go back to highest priority after yielding.
 
     newBytes = internalNetworkStackPtr -> dataPlane -> available();
     currentSize = internalNetworkStackPtr -> dataBuffer.size();
@@ -150,6 +155,8 @@ void dataStreamReceived(){
     #endif
 
     internalNetworkStackPtr -> recordDataReceptionTime();
+
+    xSemaphoreGive(internalNetworkStackPtr -> dataBufferMutex);
 
     // flushSerialBuffer(internalNetworkStackPtr -> dataPlane);
     // Serial.printf("Received %d bytes\n\r", newBytes);
