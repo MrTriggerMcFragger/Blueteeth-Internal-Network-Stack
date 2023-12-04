@@ -21,19 +21,22 @@ using namespace std;
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (80640)
-#define DATA_PLANE_BAUD (3360000)//6720000 (WORKING)
+#define DATA_PLANE_BAUD (3360000) 
 
-#define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
+
+//Macros for defining serial buffer sizes
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224) //1024
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224)  
 
-//Macros for framing
+#define DATA_STREAM_TIMEOUT (1000) //How much time (ms) can elapse after the data buffer is accessed before it is reset
+
+//Macros for data stream framing
 #define FRAME_START_SENTINEL (0b11111111)
 #define FRAME_PADDING_SENTINEL (0b10000000)
-#define FRAME_SIZE (33)
-#define BYTES_PER_ROTATION (8)
-#define ROTATIONS_PER_FRAME (4)
-#define PAYLOAD_SIZE (28)
+#define FRAME_SIZE (33) //Size of a data stream frame
+#define BYTES_PER_ROTATION (8) //How many bytes there are per a data stream frame "rotation"
+#define ROTATIONS_PER_FRAME (4) //The number of "rotations" in a data stream frame
+#define PAYLOAD_SIZE (28) //The number of bytes in the payload of a data stream frame
 
 enum PacketType {NONE, INITIALIZAITON, CLAIM_ADDRESS, PING, STREAM_RESULTS, SCAN, CONNECT, SELECT, DISCONNECT, STREAM, FLUSH, DROP, TEST};
 
@@ -47,48 +50,14 @@ void uartFrameReceived();
 */
 void dataStreamReceived();
 
+
 /* Packages data into BlueTeeth Data Stream frames
 *
-*  @PackedData - A pointer to a buffer where the packed data will be stored.
-*  @len - The length of the unpacked data.
-*  @dataBuffer - A double-ended queue containing the unpacked data.
-*  @requestPadding - If the length of the data is not an integer multiple of the frame size, you can insert the last frame with real data and pad out the rest with a padding character.
+*  @framedData - A pointer to a buffer where the frame data will be stored.
+*  @dataLength - The length of the frame payload data.
+*  @dataBuffer - A double-ended queue containing the frame payload data.
 */
-void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> & payloadBuffer, bool requestPadding = true){
-
-    uint8_t select_lower;
-    //Converting dataLength to an integer multiple of the frame size
-  
-    size_t finalFrameEnd = ceil( (double) dataLength / PAYLOAD_SIZE ) * FRAME_SIZE;
-    size_t finalPayloadBytePosition = dataLength/PAYLOAD_SIZE * FRAME_SIZE + 1 + (dataLength % PAYLOAD_SIZE)/BYTES_PER_ROTATION + dataLength % PAYLOAD_SIZE; //Size of frames prior to the final frame + Frame start sentinel + Bytes from complete rotations of final frame + Bytes from incomplete rotation of the final frame.
-
-    for(volatile int frame = 0; frame < finalFrameEnd; frame += FRAME_SIZE){
-        packedData[frame] = FRAME_START_SENTINEL;
-        for (volatile int rotation = 0; rotation < (ROTATIONS_PER_FRAME * BYTES_PER_ROTATION) ; rotation += BYTES_PER_ROTATION){
-          select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
-          packedData[frame + rotation + 1] = 0; //Necessary as the first byte is some random number prior to starting algorithm 
-          for(volatile int byte = 1; byte < BYTES_PER_ROTATION; ++byte){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
-
-              if ((frame + rotation + byte) < finalPayloadBytePosition) {
-                packedData[frame + rotation + byte] += payloadBuffer.front() >> byte;
-                packedData[frame + rotation + byte + 1] = (select_lower & payloadBuffer.front()) << (7 - byte);           
-                payloadBuffer.pop_front();
-                select_lower = (select_lower << 1) + 1;
-              }
-              else {         
-                packedData[frame + rotation + byte + 1] = FRAME_PADDING_SENTINEL;
-                // cout << "Placing pading...." << endl;
-                if (frame + rotation + byte + 1 >= finalFrameEnd){
-                    Serial.println("Something went wrong trying to package a frame...");
-                    return;
-                }
-              }
-          }
-        }
-    }
-}
-
-//Last 8 Bytes : 00xXX 0xXX 0xXX 0xFF 0x23 0x47 0x28 0x12 | 0xXX 0xXX 0xXX
+void packDataStream(uint8_t * framedData, int dataLength, deque<uint8_t> & payloadBuffer);
 
 /* Unpacks data from BlueTeeth data stream frames into buffer
 *
@@ -96,117 +65,7 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 *  @dataStreamLength - The number of bytes in the data streram.
 *  @dataBuffer - A double-ended queue where the frame payload data can be stored.
 */
-void inline unpackDataStream(const uint8_t * dataStream, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane){
-    
-    uint8_t select_lower;
-    uint8_t select_upper;
-    vector<uint8_t> framePayload;  
-
-    const auto outOfBoundsCheck = [dataStreamLength] (int inc1, int inc2) -> bool {
-        if ((inc1 + inc2) >= dataStreamLength){ 
-            return true;
-        }
-        else {
-            return false;
-        } 
-    };
-
-    auto before = dataBuffer.size();
-
-    volatile int cnt = 0;
-
-loop_start:
-
-    while (cnt < dataStreamLength ){
-
-        framePayload.clear();
-
-        if (dataStream[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
-
-            if (outOfBoundsCheck(cnt, 0)) {
-                //Will occur if the last byte received was a FRAME_START_SENTINEL
-                return;
-            }
-
-            for (volatile int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ 
-                
-                select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
-                select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
-
-                if (rotation >= 4){
-                    Serial.println("Fucking compiler shit brother");
-                }
-                
-                for(volatile int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
-                    
-                    if (rotation >= 4){
-                        Serial.println("Fucking compiler shit brother");
-                    }
-
-                    if (outOfBoundsCheck(cnt, byte)){
-                        Serial.printf("%d -> byte = %d, rotation = %d (dataBufferSize = %d, bytes available = %d)\n\r", cnt, byte, rotation, dataBuffer.size(), dataPlane -> available());
-                        // flushSerialBuffer(dataPlane);
-                        return; //Corruption occurred
-                    }
-
-                    switch(dataStream[cnt + byte + 1]){
-                        case FRAME_START_SENTINEL:
-                          //CORRUPTION OCCURRED
-                          goto loop_start;
-                      
-                        case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
-                          goto loop_start; //Don't bother correcting until the problem is solved
-
-                        default:
-                            // if (packedData[cnt + byte] > 0b10000000){
-                            //     Serial.print("A bad byte was detected in a frame...\n\r");
-                            // }
-
-                            framePayload.push_back(
-                                ((dataStream[cnt + byte] & select_upper) << (byte + 1)) + 
-                                ((dataStream[cnt + byte + 1] & select_lower) >> (6 - byte))
-                            ); 
-                            select_upper = select_upper >> 1;
-                            select_lower += 1 << (5 - byte);
-                    }
-                }
-                cnt += BYTES_PER_ROTATION;
-            }
-
-        }
-
-loop_end:
-
-    if ((framePayload.size() % 4) != 0){
-        Serial.println("Corruption detected");
-
-        while (((framePayload.size() % 4)) != 0){
-            framePayload.pop_back();
-        }
-    }
-    dataBuffer.insert(dataBuffer.end(), framePayload.begin(), framePayload.end());
-
-  }
-
-  return;
-
-correction:
-
-  size_t bytesAdded = (dataBuffer.size() - before); 
-
-  if (bytesAdded > (dataStreamLength / FRAME_SIZE * PAYLOAD_SIZE)){
-    Serial.printf("Bad data length added (%d after adding %d)", dataBuffer.size(), bytesAdded);
-  }
-
-  dataBuffer.erase(dataBuffer.end() - bytesAdded, dataBuffer.end());
-  Serial.printf("Attempting to correct (now %d bytes)...\n\r", dataBuffer.size());
-
-}
-
-/* Flushes all bytes in the serial data buffer -> When there's too much data in the buffer, no new data is added, and the onReceive callback won't get called.
-*
-*/
-void flushSerialBuffer(HardwareSerial * serial);
+void unpackDataStream(const uint8_t * dataStream, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane);
 
 
 class BlueteethPacket {
@@ -260,8 +119,8 @@ class BlueteethBaseStack
 
 public:
 
+    //Give necessary functions and classes access to private member variables and functions
     friend BlueteethPacket;
-
     friend int32_t a2dpDirectTransfer(uint8_t * data, int32_t len);
     friend void uartFrameReceived();
     friend void dataStreamReceived();
@@ -290,7 +149,7 @@ public:
 
         this -> controlPlane -> begin(115200);
         this -> controlPlane -> onReceive(uartFrameReceived);
-        //441600
+        
         this -> dataPlane -> setRxBufferSize(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
         this -> dataPlane -> setRxFIFOFull(DATA_PLANE_SERIAL_RX_BUFFER_SIZE);
 
@@ -325,11 +184,12 @@ public:
 
     }
     
-    //Serial baud rate -> 10 x BT Audio Data Rate
-    //BT Audio data rate 
-
+    /*  Flushes the data plane serial buffer
+    *
+    */
     void flushDataPlaneSerialBuffer(){
-        flushSerialBuffer(this -> dataPlane);
+        uint8_t tmp[this -> dataPlane -> available()];
+        this -> dataPlane -> readBytes(tmp, this -> dataPlane -> available());
     }
 
     /*  Retrieves the device's address.
@@ -398,25 +258,55 @@ public:
         this -> queuePacket(1, receivedPacket);
     }
 
+    /*  Method to get the number of bytes vailable to read from the data plane's RX serial buffer.
+    *  
+    *   @return - The number of bytes available to read from the data plane's RX serial buffer.
+    */
     int getDataPlaneBytesAvailable(){
 
         return this -> dataPlane -> available();
     
     }
+
+    /*  Method to get the number of bytes vailable to read from the data plane's TX serial buffer.
+    *  
+    *   @return - The number of bytes available to read from the data plane's TX serial buffer.
+    */
     int getDataPlaneBytesAvailableToWrite(){
 
         return this -> dataPlane -> availableForWrite();
     
     }
 
+    /*  Records the time at which data was added to the data buffer (used to perform a flush of the data buffer/data plane serial
+    *   buffer if stagnant for too long)
+    *  
+    */
     void recordDataReceptionTime(){
         this -> lastDataReceptionTime = millis();
     }
 
+    /*  Records the time at which data was taken out of the data buffer (used to perform a flush of the data buffer/data plane
+    *   serial buffer if stagnant for too long)
+    *  
+    */
     void recordDataBufferAccessTime(){
         this -> lastDataReceptionTime = millis();
     }
 
+    /*  Records the time at which a data buffer/data plane serial buffer flush occured (used to perform a flush of the data buffer/data
+    *   plane serial buffer if stagnant for too long)
+    *  
+    */
+    void resetDataBufferTimeout(){
+        this -> lastDataReceptionTime = millis(); 
+    }
+
+    /*  Returns the time that has elapsed since the last time the data buffer was altered (used to perform a flush of the data 
+    *   buffer/data plane serial buffer if stagnant for too long)
+    *  
+    *   @return - The amount of time (ms) that has elapsed since the last time the data buffer was altered
+    */
     uint32_t getTimeElapsedSinceLastDataBufferAccess(){
         return millis() - this -> lastDataReceptionTime;
     }
@@ -426,6 +316,10 @@ public:
 
 protected:
     
+    /* Sends a Blueteeth packet on the control plane (should only be called when the node holds the token)
+    *  
+    *   @packet - The Blueteeth packet to be transmitted
+    */
     void transmitPacket(BlueteethPacket packet){
         this -> controlPlane -> write(packet.tokenFlag);
         this -> controlPlane -> write(packet.srcAddr);

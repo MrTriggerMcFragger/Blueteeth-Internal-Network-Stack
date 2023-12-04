@@ -6,6 +6,145 @@ extern BlueteethBaseStack * internalNetworkStackPtr;
 uint32_t streamTime; //DEBUG (REMOVE LATER)
 #endif
 
+void packDataStream(uint8_t * framedData, int dataLength, deque<uint8_t> & payloadBuffer){
+
+    uint8_t select_lower;
+    //Converting dataLength to an integer multiple of the frame size
+  
+    size_t finalFrameEnd = ceil( (double) dataLength / PAYLOAD_SIZE ) * FRAME_SIZE;
+    size_t finalPayloadBytePosition = dataLength/PAYLOAD_SIZE * FRAME_SIZE + 1 + (dataLength % PAYLOAD_SIZE)/BYTES_PER_ROTATION + dataLength % PAYLOAD_SIZE; //Size of frames prior to the final frame + Frame start sentinel + Bytes from complete rotations of final frame + Bytes from incomplete rotation of the final frame.
+
+    for(volatile int frame = 0; frame < finalFrameEnd; frame += FRAME_SIZE){
+        framedData[frame] = FRAME_START_SENTINEL;
+        for (volatile int rotation = 0; rotation < (ROTATIONS_PER_FRAME * BYTES_PER_ROTATION) ; rotation += BYTES_PER_ROTATION){
+          select_lower = 0b00000001; //used to select the lower portion of the unpacked byte;
+          framedData[frame + rotation + 1] = 0; //Necessary as the first byte is some random number prior to starting algorithm 
+          for(volatile int byte = 1; byte < BYTES_PER_ROTATION; ++byte){ //pre-increment is technically faster as there isn't a copy of the var made (so doing ++byte rather than byte++)
+
+              if ((frame + rotation + byte) < finalPayloadBytePosition) {
+                framedData[frame + rotation + byte] += payloadBuffer.front() >> byte;
+                framedData[frame + rotation + byte + 1] = (select_lower & payloadBuffer.front()) << (7 - byte);           
+                payloadBuffer.pop_front();
+                select_lower = (select_lower << 1) + 1;
+              }
+              else {         
+                framedData[frame + rotation + byte + 1] = FRAME_PADDING_SENTINEL;
+                // cout << "Placing pading...." << endl;
+                if (frame + rotation + byte + 1 >= finalFrameEnd){
+                    Serial.println("Something went wrong trying to package a frame...");
+                    return;
+                }
+              }
+          }
+        }
+    }
+}
+
+#include <stdexcept>
+
+void unpackDataStream(const uint8_t * dataStream, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane){
+    
+    uint8_t select_lower;
+    uint8_t select_upper;
+    vector<uint8_t> framePayload;  
+
+    const auto outOfBoundsCheck = [dataStreamLength] (int inc1, int inc2) -> bool {
+        if ((inc1 + inc2) >= dataStreamLength){ 
+            return true;
+        }
+        else {
+            return false;
+        } 
+    };
+
+    auto before = dataBuffer.size();
+
+    volatile int cnt = 0;
+
+loop_start:
+
+    while (cnt < dataStreamLength ){
+
+        framePayload.clear();
+
+        if (dataStream[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+
+            if (outOfBoundsCheck(cnt, 0)) {
+                //Will occur if the last byte received was a FRAME_START_SENTINEL
+                return;
+            }
+
+            for (volatile int rotation = 0; rotation < ROTATIONS_PER_FRAME; ++rotation){ 
+                
+                select_upper = 0b01111111; //Used to select the upper portion of the unpacked byte 
+                select_lower = 0b01000000; //Used to select the lower portion of the unpacked byte
+                
+                for(volatile int byte = 0; byte < (BYTES_PER_ROTATION - 1); ++byte){
+                    
+                    if (outOfBoundsCheck(cnt, byte)){
+                        // Serial.printf("%d -> byte = %d, rotation = %d (dataBufferSize = %d, bytes available = %d)\n\r", cnt, byte, rotation, dataBuffer.size(), dataPlane -> available());
+                        // flushSerialBuffer(dataPlane);
+                        return; //Corruption occurred
+                    }
+
+                    switch(dataStream[cnt + byte + 1]){
+                        case FRAME_START_SENTINEL:
+                          //CORRUPTION OCCURRED
+                          goto loop_start;
+                      
+                        case FRAME_PADDING_SENTINEL: //If you see a start sentinel before the end of a frame, the frame was corrupted.    
+                          goto loop_start; //Don't bother correcting until the problem is solved
+
+                        default:
+                            // if (packedData[cnt + byte] > 0b10000000){
+                            //     Serial.print("A bad byte was detected in a frame...\n\r");
+                            // }
+
+                            framePayload.push_back(
+                                ((dataStream[cnt + byte] & select_upper) << (byte + 1)) + 
+                                ((dataStream[cnt + byte + 1] & select_lower) >> (6 - byte))
+                            ); 
+                            select_upper = select_upper >> 1;
+                            select_lower += 1 << (5 - byte);
+                    }
+                }
+                cnt += BYTES_PER_ROTATION;
+            }
+
+        }
+
+loop_end:
+
+    if ((framePayload.size() % 4) != 0){
+        Serial.println("Corruption detected");
+
+        while (((framePayload.size() % 4)) != 0){
+            framePayload.pop_back();
+        }
+    }
+    if (framePayload.size() > 0)
+    try{
+        dataBuffer.insert(dataBuffer.end(), framePayload.begin(), framePayload.end());
+    }
+    catch (const std::bad_alloc &e){
+        Serial.printf("Bad Allocation occurred: %s", e.what());
+    }
+    catch (const std::out_of_range &e) {
+        Serial.printf("Out of Range occurred: %s", e.what());
+    } 
+    catch (const std::exception &e) {
+        Serial.printf("Exception occurred: %s", e.what());
+    }
+    catch(...){
+        Serial.printf("This was the offending line. The sizes were as follows: dataBuffer = %d, framePayload = %d", dataBuffer.size(), framePayload.size());
+        throw;
+    }
+  }
+
+  return;
+}
+
+
 void inline flushSerialBuffer(HardwareSerial * serial){
     while (serial -> available() > 0){
         serial -> read();
