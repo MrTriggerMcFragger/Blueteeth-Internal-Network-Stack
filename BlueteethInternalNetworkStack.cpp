@@ -104,9 +104,9 @@ void dataStreamReceived(){
     static bool flushToken;
     static uint8_t tmp [DATA_PLANE_SERIAL_RX_BUFFER_SIZE]; 
 
-    if (internalNetworkStackPtr -> getDataPlaneBytesAvailable() < 512){
-        return;
-    }
+    // if (internalNetworkStackPtr -> getDataPlaneBytesAvailable() < 512){
+    //     return;
+    // }
     
     while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 0) == pdFALSE){
         //Do nothing

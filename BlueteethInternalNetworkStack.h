@@ -92,17 +92,24 @@ void inline packDataStream(uint8_t * packedData, int dataLength, deque<uint8_t> 
 
 /* Unpacks data from BlueTeeth data stream frames into buffer
 *
-*  @PackedData - A pointer to a buffer where the packed data is stored.
-*  @len - The length of the packed data.
-*  @dataBuffer - A double-ended queue containing the unpacked data.
+*  @dataStream - A pointer to a buffer where the framed data is stored.
+*  @dataStreamLength - The number of bytes in the data streram.
+*  @dataBuffer - A double-ended queue where the frame payload data can be stored.
 */
-void inline unpackDataStream(const uint8_t * packedData, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane){
+void inline unpackDataStream(const uint8_t * dataStream, const int dataStreamLength, deque<uint8_t> & dataBuffer, HardwareSerial * dataPlane){
     
     uint8_t select_lower;
     uint8_t select_upper;
     vector<uint8_t> framePayload;  
 
-    // static deque<uint8_t> leftOverData;
+    const auto outOfBoundsCheck = [dataStreamLength] (int inc1, int inc2) -> bool {
+        if ((inc1 + inc2) >= dataStreamLength){ 
+            return true;
+        }
+        else {
+            return false;
+        } 
+    };
 
     auto before = dataBuffer.size();
 
@@ -114,9 +121,9 @@ loop_start:
 
         framePayload.clear();
 
-        if (packedData[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
+        if (dataStream[cnt++] == FRAME_START_SENTINEL){ //Don't begin unpacking until the sentinal character is found 
 
-            if (cnt >= dataStreamLength) {
+            if (outOfBoundsCheck(cnt, 0)) {
                 //Will occur if the last byte received was a FRAME_START_SENTINEL
                 return;
             }
@@ -136,13 +143,13 @@ loop_start:
                         Serial.println("Fucking compiler shit brother");
                     }
 
-                    if ((cnt + byte) >= dataStreamLength){
+                    if (outOfBoundsCheck(cnt, byte)){
                         Serial.printf("%d -> byte = %d, rotation = %d (dataBufferSize = %d, bytes available = %d)\n\r", cnt, byte, rotation, dataBuffer.size(), dataPlane -> available());
                         // flushSerialBuffer(dataPlane);
                         return; //Corruption occurred
                     }
 
-                    switch(packedData[cnt + byte + 1]){
+                    switch(dataStream[cnt + byte + 1]){
                         case FRAME_START_SENTINEL:
                           //CORRUPTION OCCURRED
                           goto loop_start;
@@ -156,8 +163,8 @@ loop_start:
                             // }
 
                             framePayload.push_back(
-                                ((packedData[cnt + byte] & select_upper) << (byte + 1)) + 
-                                ((packedData[cnt + byte + 1] & select_lower) >> (6 - byte))
+                                ((dataStream[cnt + byte] & select_upper) << (byte + 1)) + 
+                                ((dataStream[cnt + byte + 1] & select_lower) >> (6 - byte))
                             ); 
                             select_upper = select_upper >> 1;
                             select_lower += 1 << (5 - byte);
