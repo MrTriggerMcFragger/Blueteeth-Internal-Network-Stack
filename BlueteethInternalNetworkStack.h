@@ -413,8 +413,12 @@ public:
         this -> lastDataReceptionTime = millis();
     }
 
-    uint32_t getLastDataReceptionTime(){
-        return this -> lastDataReceptionTime;
+    void recordDataBufferAccessTime(){
+        this -> lastDataReceptionTime = millis();
+    }
+
+    uint32_t getTimeElapsedSinceLastDataBufferAccess(){
+        return millis() - this -> lastDataReceptionTime;
     }
 
     deque<uint8_t> dataBuffer;
@@ -466,8 +470,10 @@ public:
         this -> controlPlane -> begin(115200);
         this -> controlPlane -> onReceive(uartFrameReceived);
         
-        this -> dataPlane->setTxBufferSize(DATA_PLANE_SERIAL_TX_BUFFER_SIZE);
+        this -> dataPlane-> setTxBufferSize(DATA_PLANE_SERIAL_TX_BUFFER_SIZE);
         this -> dataPlane -> begin(DATA_PLANE_BAUD, SERIAL_8N1, 18, 19);
+        
+        this -> dataBufferMutex = xSemaphoreCreateMutex();
     }
 
     /* To be called from a watchdog timer task to generate a new token if the token is lost.
