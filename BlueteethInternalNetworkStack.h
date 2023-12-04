@@ -21,7 +21,7 @@ using namespace std;
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
 #define MAX_DATA_BUFFER_SIZE (80640)
-#define DATA_PLANE_BAUD (6720000)//6720000 (WORKING)
+#define DATA_PLANE_BAUD (3360000)//6720000 (WORKING)
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
