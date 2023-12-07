@@ -127,7 +127,7 @@ loop_end:
         dataBuffer.insert(dataBuffer.end(), framePayload.begin(), framePayload.end());
     }
     catch (const std::bad_alloc &e){
-        Serial.printf("Bad Allocation occurred: %s", e.what());
+        Serial.printf("Bad Allocation occurred (size was %d): %s", e.what(), dataBuffer.size());
     }
     catch (const std::out_of_range &e) {
         Serial.printf("Out of Range occurred: %s", e.what());

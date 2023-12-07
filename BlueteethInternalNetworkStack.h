@@ -14,20 +14,21 @@
 
 using namespace std;
 
-#define DATA_STREAM_TEST_SIZE (40320) // 5040
+#define DATA_STREAM_TEST_SIZE (10080) // 5040
 
 #define MAX_PAYLOAD_SIZE (10)
 #define TOKEN_HOLD_TIME_MS (10) //Used to create a fixed token passing speed
 #define PACKET_DELAY_TIME_MS (5) //Used to create a fixed data packet transmit speed
 #define RING_TOKEN_GENERATION_DELAY_MS (1000)
-#define MAX_DATA_BUFFER_SIZE (80640)
+#define MAX_DATA_BUFFER_SIZE (10080)
 #define DATA_PLANE_BAUD (3360000) 
 
 
 //Macros for defining serial buffer sizes
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224)  
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224) 
 
+#define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_STREAM_TIMEOUT (1000) //How much time (ms) can elapse after the data buffer is accessed before it is reset
 
 //Macros for data stream framing
@@ -399,7 +400,15 @@ public:
 
         uint8_t newAddress = receivedPacket.payload[0];
         if (knownAddresses.count(newAddress) == 0){
-            this -> knownAddresses.insert(receivedPacket.payload[0]);
+            try {
+                this -> knownAddresses.insert(receivedPacket.payload[0]);
+            }
+            catch (std::exception e) {
+                Serial.printf("Issue occured while trying to insert the payload into the known addresses set. e.what() = %s", e.what());
+            }
+            catch (...){
+                Serial.print("Not a standard exception.");
+            }
         }
         else {
             Serial.printf("Device attempted to use address %d, but it was already registered to another device\n\r", newAddress);
