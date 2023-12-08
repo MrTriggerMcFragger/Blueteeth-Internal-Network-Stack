@@ -246,14 +246,15 @@ void dataStreamReceived(){
     // if (internalNetworkStackPtr -> getDataPlaneBytesAvailable() < 512){
     //     return;
     // }
-    
+    vTaskPrioritySet(NULL, 19); //reduce to A2DP priority in order to yield to it
+
     while (xSemaphoreTake(internalNetworkStackPtr -> dataBufferMutex, 0) == pdFALSE){
         //Do nothing
         // Serial.print("DATA PLANE Yielding...\n\r");
-        vTaskPrioritySet(NULL, 19); //reduce to A2DP priority in order to yield to it
+        // vTaskPrioritySet(NULL, 19); //reduce to A2DP priority in order to yield to it
         vPortYield();
     }
-    vTaskPrioritySet(NULL, 24); //go back to highest priority after yielding.
+    // vTaskPrioritySet(NULL, 24); //go back to highest priority after yielding.
 
 
     if ( (internalNetworkStackPtr -> dataBuffer.size() % 4 ) != 0 ){
