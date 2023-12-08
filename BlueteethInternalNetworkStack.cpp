@@ -31,7 +31,7 @@ void packDataStream(uint8_t * framedData, int dataLength, deque<uint8_t> & paylo
                 framedData[frame + rotation + byte + 1] = FRAME_PADDING_SENTINEL;
                 // cout << "Placing pading...." << endl;
                 if (frame + rotation + byte + 1 >= finalFrameEnd){
-                    Serial.println("Something went wrong trying to package a frame...");
+                    // Serial.println("Something went wrong trying to package a frame...");
                     return;
                 }
               }
@@ -258,7 +258,7 @@ void dataStreamReceived(){
 
 
     if ( (internalNetworkStackPtr -> dataBuffer.size() % 4 ) != 0 ){
-        Serial.print("Something went wrong...\n\r");
+        // Serial.print("Something went wrong...\n\r");
         internalNetworkStackPtr -> dataBuffer.clear();
     }
 
@@ -292,7 +292,10 @@ void dataStreamReceived(){
     // bytesProcessed += bytesReady;
 
 
-    unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlane);
+    // unpackDataStream(tmp, bytesReady, internalNetworkStackPtr -> dataBuffer, internalNetworkStackPtr -> dataPlane);
+    for (int i = 0; i < bytesReady; i++){
+        internalNetworkStackPtr -> dataBuffer.push_back(tmp[i]);
+    }
 
     bytesProcessed = (internalNetworkStackPtr -> dataBuffer.size() - currentSize) / PAYLOAD_SIZE * FRAME_SIZE;
     if (bytesProcessed > bytesReady){
