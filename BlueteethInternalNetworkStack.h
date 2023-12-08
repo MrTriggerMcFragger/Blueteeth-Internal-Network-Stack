@@ -26,7 +26,7 @@ using namespace std;
 
 //Macros for defining serial buffer sizes
 #define DATA_PLANE_SERIAL_TX_BUFFER_SIZE (1024)
-#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (4224) 
+#define DATA_PLANE_SERIAL_RX_BUFFER_SIZE (2112) 
 
 #define MAX_DATA_PLANE_PAYLOAD_SIZE (420)
 #define DATA_STREAM_TIMEOUT (1000) //How much time (ms) can elapse after the data buffer is accessed before it is reset
@@ -189,8 +189,12 @@ public:
     *
     */
     void flushDataPlaneSerialBuffer(){
-        uint8_t tmp[this -> dataPlane -> available()];
-        this -> dataPlane -> readBytes(tmp, this -> dataPlane -> available());
+        //Don't have memory for this even if its faster
+        // uint8_t tmp[this -> dataPlane -> available()];
+        // this -> dataPlane -> readBytes(tmp, this -> dataPlane -> available());
+        for (int i = 0; i < this -> getDataPlaneBytesAvailable(); i++){
+            this -> dataPlane -> read();
+        }
     }
 
     /*  Retrieves the device's address.
